@@ -179,6 +179,8 @@ struct GameListDetailView: View {
     var onImportMetadata: ((Game) -> Void)? = nil
     var onEditCopy: ((GameCopy) -> Void)? = nil
     var onEditPlaythrough: ((GamePlaythrough) -> Void)? = nil
+    var onDeleteCopy: ((GameCopy) -> Void)? = nil
+    var onDeletePlaythrough: ((GamePlaythrough) -> Void)? = nil
 
     @State private var navigationPath = [GameLibraryDetailRoute]()
 
@@ -193,7 +195,9 @@ struct GameListDetailView: View {
                 onAddPlaythrough: onAddPlaythrough,
                 onImportMetadata: onImportMetadata,
                 onEditCopy: onEditCopy,
-                onEditPlaythrough: onEditPlaythrough
+                onEditPlaythrough: onEditPlaythrough,
+                onDeleteCopy: onDeleteCopy,
+                onDeletePlaythrough: onDeletePlaythrough
             )
             .navigationDestination(for: GameLibraryDetailRoute.self) { route in
                 destination(for: route)
@@ -220,6 +224,8 @@ struct GameListDetailView: View {
                     onAddPlaythrough: onAddPlaythrough,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough,
+                    onDeleteCopy: onDeleteCopy,
+                    onDeletePlaythrough: onDeletePlaythrough,
                     onOpenList: open
                 )
             } else {
@@ -239,7 +245,9 @@ struct GameListDetailView: View {
                     onAddPlaythrough: onAddPlaythrough,
                     onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
-                    onEditPlaythrough: onEditPlaythrough
+                    onEditPlaythrough: onEditPlaythrough,
+                    onDeleteCopy: onDeleteCopy,
+                    onDeletePlaythrough: onDeletePlaythrough
                 )
             } else {
                 ContentUnavailableView(
@@ -272,6 +280,8 @@ struct GameListDetailContentView: View {
     var onImportMetadata: ((Game) -> Void)? = nil
     var onEditCopy: ((GameCopy) -> Void)? = nil
     var onEditPlaythrough: ((GamePlaythrough) -> Void)? = nil
+    var onDeleteCopy: ((GameCopy) -> Void)? = nil
+    var onDeletePlaythrough: ((GamePlaythrough) -> Void)? = nil
 
     private var entries: [GameListEntry] {
         list.sortedEntries
@@ -695,5 +705,5 @@ struct GameListSelectionPlaceholderView: View {
     list.addEntry(GameListEntry(game: anotherGame, sortIndex: 1))
 
     return GameListDetailView(list: list, allGames: [game, anotherGame], allLists: [list])
-        .modelContainer(for: [Game.self, GameList.self, GameListEntry.self, GameCopy.self, GamePlaythrough.self], inMemory: true)
+        .modelContainer(for: [Game.self, GameList.self, GameListEntry.self, GameCopy.self, GamePlaythrough.self, GameTag.self, GameTagAssignment.self], inMemory: true)
 }

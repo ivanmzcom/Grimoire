@@ -10,6 +10,12 @@ import SwiftData
 
 @main
 struct JuegosAppApp: App {
+#if os(macOS)
+    @StateObject private var iCloudSyncStatusModel = ICloudSyncStatusModel(
+        containerIdentifier: AppCloudKitConfiguration.containerIdentifier
+    )
+#endif
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Game.self,
@@ -17,6 +23,8 @@ struct JuegosAppApp: App {
             GameListEntry.self,
             GameCopy.self,
             GamePlaythrough.self,
+            GameTag.self,
+            GameTagAssignment.self,
         ])
         let modelConfiguration = ModelConfiguration(
             schema: schema,
@@ -37,6 +45,8 @@ struct JuegosAppApp: App {
 #if os(macOS)
         Settings {
             JuegosSettingsView()
+                .environmentObject(iCloudSyncStatusModel)
+                .modelContainer(sharedModelContainer)
         }
 #endif
     }
@@ -44,6 +54,9 @@ struct JuegosAppApp: App {
     private var mainWindow: some Scene {
         WindowGroup {
             ContentView()
+#if os(macOS)
+                .environmentObject(iCloudSyncStatusModel)
+#endif
         }
 #if os(macOS)
         .defaultSize(width: 1280, height: 820)

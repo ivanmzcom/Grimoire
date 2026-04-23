@@ -15,31 +15,31 @@ enum AppCloudKitConfiguration {
 import CloudKit
 import Combine
 import CoreData
+import SwiftData
 import SwiftUI
 
 struct JuegosSettingsView: View {
-    var body: some View {
-        TabView {
-            ICloudSyncSettingsView(containerIdentifier: AppCloudKitConfiguration.containerIdentifier)
-                .tabItem {
-                    Label("iCloud", systemImage: "icloud")
-                }
+    @EnvironmentObject private var statusModel: ICloudSyncStatusModel
 
-            IGDBSettingsView()
-                .tabItem {
-                    Label("IGDB", systemImage: "magnifyingglass")
-                }
-        }
+    var body: some View {
+        ICloudSyncSettingsView()
         .frame(width: 560, height: 430)
         .scenePadding()
     }
 }
 
-private struct ICloudSyncSettingsView: View {
-    @StateObject private var statusModel: ICloudSyncStatusModel
+struct ICloudSyncSettingsView: View {
+    @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var statusModel: ICloudSyncStatusModel
+    @Query(sort: [SortDescriptor(\Game.title)]) private var games: [Game]
 
-    init(containerIdentifier: String) {
-        _statusModel = StateObject(wrappedValue: ICloudSyncStatusModel(containerIdentifier: containerIdentifier))
+    @State private var isUpdatingMetadata = false
+    @State private var metadataUpdateProgress = 0
+    @State private var metadataUpdateTotal = 0
+    @State private var metadataUpdateMessage: String?
+
+    private var gamesWithIGDBMetadata: [Game] {
+        games.filter { $0.igdbID != nil }
     }
 
     var body: some View {
@@ -99,6 +99,40 @@ private struct ICloudSyncSettingsView: View {
                 LabeledContent("Base de datos", value: "Privada")
             }
 
+            Section("Metadatos") {
+                LabeledContent("Juegos vinculados a IGDB", value: "\(gamesWithIGDBMetadata.count)")
+
+                Button {
+                    Task {
+                        await updateAllIGDBMetadata()
+                    }
+                } label: {
+                    Label("Actualizar metadatos de todos los juegos", systemImage: "arrow.clockwise")
+                }
+                .disabled(isUpdatingMetadata || gamesWithIGDBMetadata.isEmpty)
+
+                if isUpdatingMetadata {
+                    ProgressView(
+                        value: Double(metadataUpdateProgress),
+                        total: Double(max(metadataUpdateTotal, 1))
+                    ) {
+                        Text("Actualizando \(metadataUpdateProgress) de \(metadataUpdateTotal)")
+                    }
+                }
+
+                if let metadataUpdateMessage {
+                    Text(metadataUpdateMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Text("La actualización se ejecuta en serie para respetar el límite de IGDB.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section("Actividad reciente") {
                 if statusModel.recentEvents.isEmpty {
                     Text("SwiftData todavía no ha publicado eventos de importación o exportación en esta sesión.")
@@ -112,6 +146,104 @@ private struct ICloudSyncSettingsView: View {
             }
         }
         .formStyle(.grouped)
+        .task {
+            statusModel.refreshAccountStatus()
+        }
+    }
+
+    @MainActor
+    private func updateAllIGDBMetadata() async {
+        let gamesToUpdate = gamesWithIGDBMetadata
+        guard !gamesToUpdate.isEmpty else {
+            metadataUpdateMessage = "No hay juegos vinculados a IGDB."
+            return
+        }
+
+        let credentials = IGDBCredentialsStore.load()
+        guard credentials.isComplete else {
+            metadataUpdateMessage = IGDBMetadataError.missingCredentials.localizedDescription
+            return
+        }
+
+        isUpdatingMetadata = true
+        metadataUpdateProgress = 0
+        metadataUpdateTotal = gamesToUpdate.count
+        metadataUpdateMessage = nil
+
+        let service = IGDBMetadataService(credentials: credentials)
+        var updatedCount = 0
+        var failedCount = 0
+
+        for game in gamesToUpdate {
+            guard let igdbID = game.igdbID else {
+                continue
+            }
+
+            do {
+                if let metadata = try await service.game(id: igdbID) {
+                    game.applyIGDBMetadata(metadata)
+                    try game.applyIGDBTags(from: metadata, in: modelContext)
+                    try modelContext.save()
+                    updatedCount += 1
+                } else {
+                    failedCount += 1
+                }
+            } catch {
+                failedCount += 1
+            }
+
+            metadataUpdateProgress += 1
+
+            if metadataUpdateProgress < metadataUpdateTotal {
+                try? await Task.sleep(nanoseconds: 350_000_000)
+            }
+        }
+
+        isUpdatingMetadata = false
+
+        if failedCount == 0 {
+            metadataUpdateMessage = "Metadatos actualizados para \(updatedCount) juegos."
+        } else {
+            metadataUpdateMessage = "Metadatos actualizados para \(updatedCount) juegos. \(failedCount) no se pudieron actualizar."
+        }
+    }
+}
+
+struct ICloudSyncStatusMenu: View {
+    @EnvironmentObject private var statusModel: ICloudSyncStatusModel
+
+    var body: some View {
+        Menu {
+            Label(statusModel.accountState.title, systemImage: statusModel.toolbarSystemImage)
+
+            Text(statusModel.syncSummary)
+
+            if let lastEvent = statusModel.latestEvent {
+                Label(lastEvent.summary, systemImage: lastEvent.systemImage)
+            }
+
+            if let lastChecked = statusModel.lastChecked {
+                Text("Comprobado \(lastChecked.formatted(date: .omitted, time: .shortened))")
+            }
+
+            Divider()
+
+            Button {
+                statusModel.refreshAccountStatus()
+            } label: {
+                Label("Comprobar ahora", systemImage: "arrow.clockwise")
+            }
+            .disabled(statusModel.isChecking)
+
+            SettingsLink {
+                Label("Ajustes de iCloud", systemImage: "gear")
+            }
+        } label: {
+            Label(statusModel.accountState.title, systemImage: statusModel.toolbarSystemImage)
+                .labelStyle(.iconOnly)
+                .foregroundStyle(statusModel.toolbarTint)
+        }
+        .help(statusModel.accountState.title)
         .task {
             statusModel.refreshAccountStatus()
         }
@@ -168,7 +300,7 @@ private struct SyncEventRow: View {
     }
 }
 
-private final class ICloudSyncStatusModel: ObservableObject {
+final class ICloudSyncStatusModel: ObservableObject {
     @Published private(set) var accountState: ICloudAccountState = .checking
     @Published private(set) var recentEvents = [ICloudSyncEvent]()
     @Published private(set) var lastChecked: Date?
@@ -223,6 +355,30 @@ private final class ICloudSyncStatusModel: ObservableObject {
         return accountState == .available ? "Preparada" : "En espera"
     }
 
+    var toolbarSystemImage: String {
+        if latestEvent?.endDate == nil, latestEvent != nil {
+            return "arrow.triangle.2.circlepath.icloud"
+        }
+
+        if latestEvent?.succeeded == false {
+            return "exclamationmark.icloud"
+        }
+
+        return accountState.systemImage
+    }
+
+    var toolbarTint: Color {
+        if latestEvent?.endDate == nil, latestEvent != nil {
+            return .blue
+        }
+
+        if latestEvent?.succeeded == false {
+            return .red
+        }
+
+        return accountState.tint
+    }
+
     func refreshAccountStatus() {
         guard !isChecking else { return }
 
@@ -262,7 +418,7 @@ private final class ICloudSyncStatusModel: ObservableObject {
     }
 }
 
-private enum ICloudAccountState: Equatable {
+enum ICloudAccountState: Equatable {
     case checking
     case available
     case restricted
@@ -353,7 +509,7 @@ private enum ICloudAccountState: Equatable {
     }
 }
 
-private struct ICloudSyncEvent: Identifiable, Equatable {
+struct ICloudSyncEvent: Identifiable, Equatable {
     let id: UUID
     let typeLabel: String
     let statusLabel: String

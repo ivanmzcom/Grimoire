@@ -206,5 +206,5 @@ private struct PlaythroughSheetRow<Content: View>: View {
     let copy = GameCopy(platform: "PlayStation 5", format: "Físico", notes: "Edición launch")
 
     return GamePlaythroughFormView(copy: copy)
-        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self], inMemory: true)
+        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self, GameTag.self, GameTagAssignment.self], inMemory: true)
 }

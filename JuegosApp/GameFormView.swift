@@ -27,6 +27,8 @@ struct GameFormView: View {
     @State private var message: String?
 
     var onCreate: ((Game) -> Void)? = nil
+    var onOpenExisting: ((Game) -> Void)? = nil
+    var onAddCopyToExisting: ((Game) -> Void)? = nil
 
     private var canSearch: Bool {
         credentials.isComplete
@@ -208,10 +210,12 @@ struct GameFormView: View {
                                 }
                                 .buttonStyle(.borderedProminent)
                                 .controlSize(.regular)
-                            } else {
-                                Label("Ya existe", systemImage: "checkmark.circle.fill")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.secondary)
+                            } else if let duplicateGame {
+                                DuplicateResultActions(
+                                    game: duplicateGame,
+                                    onOpen: openExisting,
+                                    onAddCopy: addCopyToExisting
+                                )
                             }
                         }
                         .padding(.vertical, 4)
@@ -334,10 +338,22 @@ struct GameFormView: View {
                                 createGame(from: result)
                             }
                             .buttonStyle(.borderedProminent)
-                        } else {
-                            Text("Ya existe")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                        } else if let duplicateGame {
+                            Menu {
+                                Button {
+                                    openExisting(duplicateGame)
+                                } label: {
+                                    Label("Abrir", systemImage: "arrow.forward.circle")
+                                }
+
+                                Button {
+                                    addCopyToExisting(duplicateGame)
+                                } label: {
+                                    Label("Añadir copia", systemImage: "plus.rectangle.on.rectangle")
+                                }
+                            } label: {
+                                Label("Ya existe", systemImage: "checkmark.circle.fill")
+                            }
                         }
                     }
                     .task {
@@ -503,11 +519,24 @@ struct GameFormView: View {
         modelContext.insert(game)
 
         do {
+            try game.applyIGDBTags(from: metadata, in: modelContext)
             try modelContext.save()
             onCreate?(game)
             dismiss()
         } catch {
             message = "No se pudo guardar el juego. Inténtalo de nuevo."
+        }
+    }
+
+    private func openExisting(_ game: Game) {
+        onOpenExisting?(game)
+        dismiss()
+    }
+
+    private func addCopyToExisting(_ game: Game) {
+        dismiss()
+        DispatchQueue.main.async {
+            onAddCopyToExisting?(game)
         }
     }
 
@@ -581,6 +610,30 @@ private struct IGDBSearchResultRow: View {
     }
 }
 
+private struct DuplicateResultActions: View {
+    let game: Game
+    let onOpen: (Game) -> Void
+    let onAddCopy: (Game) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button {
+                onOpen(game)
+            } label: {
+                Label("Abrir", systemImage: "arrow.forward.circle")
+            }
+
+            Button {
+                onAddCopy(game)
+            } label: {
+                Label("Añadir copia", systemImage: "plus.rectangle.on.rectangle")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .controlSize(.small)
+    }
+}
+
 #if os(macOS)
 private struct MacResultsPlaceholder: View {
     let didSearch: Bool
@@ -619,5 +672,5 @@ private struct MacResultsPlaceholder: View {
 
 #Preview {
     GameFormView()
-        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self], inMemory: true)
+        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self, GameTag.self, GameTagAssignment.self], inMemory: true)
 }

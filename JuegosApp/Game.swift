@@ -14,6 +14,8 @@ final class Game {
     var releaseYear: Int?
     var igdbID: Int?
     var coverURL: String = ""
+    var heroImageURL: String = ""
+    var screenshotURL: String = ""
     var summary: String = ""
     var genresText: String = ""
     var developersText: String = ""
@@ -24,6 +26,7 @@ final class Game {
     var createdAt: Date = Date.now
     @Relationship(deleteRule: .cascade, inverse: \GameCopy.game) var copies: [GameCopy]?
     @Relationship(deleteRule: .cascade, inverse: \GameListEntry.game) var listEntries: [GameListEntry]?
+    @Relationship(deleteRule: .cascade, inverse: \GameTagAssignment.game) var tagAssignments: [GameTagAssignment]?
 
     init(
         title: String,
@@ -54,6 +57,38 @@ final class Game {
 
     var copyCount: Int {
         sortedCopies.count
+    }
+
+    var isWishlistItem: Bool {
+        copyCount == 0
+    }
+
+    func hasTag(_ tag: GameTag) -> Bool {
+        sortedTags.contains { existingTag in
+            existingTag.persistentModelID == tag.persistentModelID
+        }
+    }
+
+    var sortedTags: [GameTag] {
+        var uniqueTags = [GameTag]()
+
+        for assignment in tagAssignments ?? [] {
+            guard let tag = assignment.tag,
+                  !uniqueTags.contains(where: { $0.persistentModelID == tag.persistentModelID })
+            else {
+                continue
+            }
+
+            uniqueTags.append(tag)
+        }
+
+        return uniqueTags.sorted { lhs, rhs in
+            lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+        }
+    }
+
+    var tagsText: String {
+        joinedSummary(for: sortedTags.map(\.name), fallback: "")
     }
 
     var platformSummary: String {
@@ -91,6 +126,7 @@ final class Game {
         (
             [summary, genresText, developersText, publishersText]
             + sortedCopies.map(\.searchableText)
+            + sortedTags.map(\.name)
         )
         .joined(separator: " ")
     }
@@ -178,12 +214,62 @@ final class Game {
             || !genresText.isEmpty
             || !developersText.isEmpty
             || !publishersText.isEmpty
+            || !heroImageURL.isEmpty
+            || !screenshotURL.isEmpty
             || totalRating != nil
     }
 
     var ratingLabel: String? {
         guard let totalRating else { return nil }
         return "\(Int(totalRating.rounded()))/100"
+    }
+}
+
+@Model
+final class GameTag {
+    var name: String = ""
+    var normalizedName: String = ""
+    var colorHex: String = ""
+    var createdAt: Date = Date.now
+    @Relationship(deleteRule: .cascade, inverse: \GameTagAssignment.tag) var assignments: [GameTagAssignment]?
+
+    init(
+        name: String,
+        colorHex: String = "",
+        createdAt: Date = .now
+    ) {
+        self.name = name
+        self.normalizedName = Self.normalized(name)
+        self.colorHex = colorHex
+        self.createdAt = createdAt
+    }
+
+    var gameCount: Int {
+        (assignments ?? []).filter { $0.game != nil }.count
+    }
+
+    static func normalized(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.diacriticInsensitive, .caseInsensitive, .widthInsensitive], locale: .current)
+            .lowercased()
+    }
+}
+
+@Model
+final class GameTagAssignment {
+    var addedAt: Date = Date.now
+    var game: Game?
+    var tag: GameTag?
+
+    init(
+        game: Game? = nil,
+        tag: GameTag? = nil,
+        addedAt: Date = .now
+    ) {
+        self.game = game
+        self.tag = tag
+        self.addedAt = addedAt
     }
 }
 

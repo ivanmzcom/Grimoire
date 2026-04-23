@@ -212,6 +212,87 @@ struct GameCoverArtwork: View {
     }
 }
 
+struct GameHeroBackdrop: View {
+    let game: Game
+    var height: CGFloat = 220
+
+    private var heroURL: String {
+        if !game.heroImageURL.isEmpty {
+            return game.heroImageURL
+        }
+
+        if !game.screenshotURL.isEmpty {
+            return game.screenshotURL
+        }
+
+        return game.coverURL
+    }
+
+    private var imageURL: URL? {
+        URL(string: heroURL)
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            backgroundImage
+
+            LinearGradient(
+                colors: [
+                    .black.opacity(0.10),
+                    .black.opacity(0.72)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            LinearGradient(
+                colors: [
+                    .black.opacity(0.50),
+                    .clear
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+        }
+        .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(.quaternary)
+        }
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private var backgroundImage: some View {
+        if let imageURL {
+            AsyncImage(url: imageURL) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                default:
+                    fallback
+                }
+            }
+        } else {
+            fallback
+        }
+    }
+
+    private var fallback: some View {
+        ZStack {
+            Rectangle()
+                .fill(Color.primary.opacity(0.07))
+
+            Image(systemName: "gamecontroller.fill")
+                .font(.system(size: 52, weight: .semibold))
+                .foregroundStyle(.secondary.opacity(0.45))
+        }
+    }
+}
+
 struct MacGameListRow: View {
     let game: Game
 
@@ -354,6 +435,64 @@ struct GamePill: View {
     }
 }
 
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var lineWidth: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var totalHeight: CGFloat = 0
+        var totalWidth: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+
+            if lineWidth > 0 && lineWidth + spacing + size.width > maxWidth {
+                totalHeight += lineHeight + spacing
+                totalWidth = max(totalWidth, lineWidth)
+                lineWidth = size.width
+                lineHeight = size.height
+            } else {
+                lineWidth += lineWidth == 0 ? size.width : spacing + size.width
+                lineHeight = max(lineHeight, size.height)
+            }
+        }
+
+        totalHeight += lineHeight
+        totalWidth = max(totalWidth, lineWidth)
+
+        return CGSize(
+            width: proposal.width ?? totalWidth,
+            height: totalHeight
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var lineHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+
+            if x > bounds.minX && x + size.width > bounds.maxX {
+                x = bounds.minX
+                y += lineHeight + spacing
+                lineHeight = 0
+            }
+
+            subview.place(
+                at: CGPoint(x: x, y: y),
+                proposal: ProposedViewSize(size)
+            )
+
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+    }
+}
+
 struct GameEmptyStateView: View {
     let searchText: String
     let selectedPlatform: String
@@ -362,16 +501,54 @@ struct GameEmptyStateView: View {
         searchText.isEmpty && selectedPlatform == "Todas"
     }
 
+    private var isWishlistState: Bool {
+        selectedPlatform == "__wishlist__"
+    }
+
     var body: some View {
         ContentUnavailableView(
-            isDefaultState ? "Tu colección de videojuegos" : "No hay resultados",
-            systemImage: isDefaultState ? "rectangle.stack.fill.badge.plus" : "magnifyingglass",
+            title,
+            systemImage: systemImage,
             description: Text(
-                isDefaultState
-                    ? "Empieza añadiendo tu primer juego y ve construyendo tu inventario."
-                    : "Prueba con otra búsqueda o cambia el filtro de plataforma."
+                description
             )
         )
+    }
+
+    private var title: String {
+        if isDefaultState {
+            return "Tu colección de videojuegos"
+        }
+
+        if isWishlistState && searchText.isEmpty {
+            return "Wishlist vacía"
+        }
+
+        return "No hay resultados"
+    }
+
+    private var systemImage: String {
+        if isDefaultState {
+            return "rectangle.stack.fill.badge.plus"
+        }
+
+        if isWishlistState && searchText.isEmpty {
+            return "sparkles.rectangle.stack"
+        }
+
+        return "magnifyingglass"
+    }
+
+    private var description: String {
+        if isDefaultState {
+            return "Empieza añadiendo tu primer juego y ve construyendo tu inventario."
+        }
+
+        if isWishlistState && searchText.isEmpty {
+            return "Los juegos sin copia registrada aparecerán aquí automáticamente."
+        }
+
+        return "Prueba con otra búsqueda o cambia el filtro."
     }
 }
 

@@ -218,5 +218,5 @@ private struct CopySheetRow<Content: View>: View {
     let game = Game(title: "Metaphor: ReFantazio", releaseYear: 2024)
 
     return GameCopyFormView(game: game)
-        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self], inMemory: true)
+        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self, GameTag.self, GameTagAssignment.self], inMemory: true)
 }

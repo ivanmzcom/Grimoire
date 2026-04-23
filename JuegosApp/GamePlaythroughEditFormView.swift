@@ -237,5 +237,5 @@ private struct PlaythroughEditSheetRow<Content: View>: View {
     copy.addPlaythrough(playthrough)
 
     return GamePlaythroughEditFormView(playthrough: playthrough)
-        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self], inMemory: true)
+        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self, GameTag.self, GameTagAssignment.self], inMemory: true)
 }

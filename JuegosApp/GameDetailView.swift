@@ -16,7 +16,12 @@ struct GameDetailView: View {
     var onAddPlaythrough: ((GameCopy) -> Void)? = nil
     var onEditCopy: ((GameCopy) -> Void)? = nil
     var onEditPlaythrough: ((GamePlaythrough) -> Void)? = nil
+    var onDeleteCopy: ((GameCopy) -> Void)? = nil
+    var onDeletePlaythrough: ((GamePlaythrough) -> Void)? = nil
     var onOpenList: ((GameList) -> Void)? = nil
+
+    @State private var copyPendingDeletion: GameCopy?
+    @State private var playthroughPendingDeletion: GamePlaythrough?
 
     private var copyCountLabel: String {
         game.copyCount == 1 ? "1 copia" : "\(game.copyCount) copias"
@@ -30,32 +35,7 @@ struct GameDetailView: View {
 #if os(macOS)
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                HStack(alignment: .top, spacing: 18) {
-                    GameCoverArtwork(
-                        title: game.title,
-                        coverURL: game.coverURL,
-                        size: CGSize(width: 84, height: 112),
-                        cornerRadius: 14
-                    )
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(game.title)
-                            .font(.title.weight(.semibold))
-                            .textSelection(.enabled)
-
-                        if !gameSummary.isEmpty {
-                            Text(gameSummary)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Text("Añadido el \(game.createdAt.formatted(date: .abbreviated, time: .omitted))")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                    }
-
-                    Spacer(minLength: 0)
-                }
+                GameDetailHeroHeader(game: game)
 
                 Divider()
 
@@ -69,6 +49,14 @@ struct GameDetailView: View {
 
                 Divider()
 
+                GameTagsSection(game: game)
+
+                Divider()
+
+                GameExternalLinksSection(game: game)
+
+                Divider()
+
                 GameIncludedInSection(game: game, onOpenList: onOpenList)
 
                 Divider()
@@ -77,7 +65,9 @@ struct GameDetailView: View {
                     game: game,
                     onAddPlaythrough: onAddPlaythrough,
                     onEditCopy: onEditCopy,
-                    onEditPlaythrough: onEditPlaythrough
+                    onEditPlaythrough: onEditPlaythrough,
+                    onDeleteCopy: { copyPendingDeletion = $0 },
+                    onDeletePlaythrough: { playthroughPendingDeletion = $0 }
                 )
             }
             .padding(32)
@@ -92,21 +82,39 @@ struct GameDetailView: View {
                 }
             }
         }
+        .confirmationDialog(
+            "Eliminar copia",
+            isPresented: Binding(
+                get: { copyPendingDeletion != nil },
+                set: { if !$0 { copyPendingDeletion = nil } }
+            ),
+            presenting: copyPendingDeletion
+        ) { copy in
+            Button("Eliminar copia", role: .destructive) {
+                onDeleteCopy?(copy)
+            }
+        } message: { copy in
+            Text("Se eliminará la copia de \(copy.platform) junto con sus partidas.")
+        }
+        .confirmationDialog(
+            "Eliminar partida",
+            isPresented: Binding(
+                get: { playthroughPendingDeletion != nil },
+                set: { if !$0 { playthroughPendingDeletion = nil } }
+            ),
+            presenting: playthroughPendingDeletion
+        ) { playthrough in
+            Button("Eliminar partida", role: .destructive) {
+                onDeletePlaythrough?(playthrough)
+            }
+        } message: { playthrough in
+            Text("Se eliminará la partida \"\(playthrough.status)\".")
+        }
 #else
         List {
             Section {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(game.title)
-                        .font(.title2.weight(.semibold))
-                        .lineLimit(3)
-
-                    if !gameSummary.isEmpty {
-                        Text(gameSummary)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(.vertical, 4)
+                GameDetailHeroHeader(game: game, compact: true)
+                    .listRowInsets(EdgeInsets())
             }
 
             Section("Ficha") {
@@ -122,6 +130,14 @@ struct GameDetailView: View {
                 }
             }
 
+            Section("Etiquetas") {
+                GameTagsSection(game: game, showsTitle: false)
+            }
+
+            Section("Enlaces") {
+                GameExternalLinksSection(game: game, showsTitle: false)
+            }
+
             Section("Incluido en") {
                 GameIncludedInSection(game: game, showsTitle: false, onOpenList: onOpenList)
             }
@@ -132,6 +148,8 @@ struct GameDetailView: View {
                     onAddPlaythrough: onAddPlaythrough,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough,
+                    onDeleteCopy: { copyPendingDeletion = $0 },
+                    onDeletePlaythrough: { playthroughPendingDeletion = $0 },
                     showsTitle: false
                 )
             }
@@ -145,18 +163,46 @@ struct GameDetailView: View {
                 }
             }
         }
+        .confirmationDialog(
+            "Eliminar copia",
+            isPresented: Binding(
+                get: { copyPendingDeletion != nil },
+                set: { if !$0 { copyPendingDeletion = nil } }
+            ),
+            presenting: copyPendingDeletion
+        ) { copy in
+            Button("Eliminar copia", role: .destructive) {
+                onDeleteCopy?(copy)
+            }
+        } message: { copy in
+            Text("Se eliminará la copia de \(copy.platform) junto con sus partidas.")
+        }
+        .confirmationDialog(
+            "Eliminar partida",
+            isPresented: Binding(
+                get: { playthroughPendingDeletion != nil },
+                set: { if !$0 { playthroughPendingDeletion = nil } }
+            ),
+            presenting: playthroughPendingDeletion
+        ) { playthrough in
+            Button("Eliminar partida", role: .destructive) {
+                onDeletePlaythrough?(playthrough)
+            }
+        } message: { playthrough in
+            Text("Se eliminará la partida \"\(playthrough.status)\".")
+        }
 #endif
     }
 
     private var hasGameActions: Bool {
-        onAddCopy != nil || onDeleteGame != nil || onImportMetadata != nil
+        true
     }
 
     private var gameActionsMenu: some View {
         Menu {
             if let onImportMetadata {
                 Button(action: onImportMetadata) {
-                    Label("Importar desde IGDB", systemImage: "magnifyingglass")
+                    Label(metadataActionTitle, systemImage: metadataActionSystemImage)
                 }
             }
 
@@ -176,6 +222,74 @@ struct GameDetailView: View {
         } label: {
             Label("Acciones", systemImage: "ellipsis")
         }
+    }
+
+    private var metadataActionTitle: String {
+        game.igdbID == nil ? "Importar desde IGDB" : "Actualizar metadatos"
+    }
+
+    private var metadataActionSystemImage: String {
+        game.igdbID == nil ? "magnifyingglass" : "arrow.clockwise"
+    }
+}
+
+private struct GameDetailHeroHeader: View {
+    let game: Game
+    var compact = false
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            GameHeroBackdrop(game: game, height: compact ? 190 : 240)
+
+            HStack(alignment: .bottom, spacing: 18) {
+                GameCoverArtwork(
+                    title: game.title,
+                    coverURL: game.coverURL,
+                    size: compact ? CGSize(width: 76, height: 102) : CGSize(width: 96, height: 128),
+                    cornerRadius: 14
+                )
+                .shadow(color: .black.opacity(0.26), radius: 10, y: 6)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(game.title)
+                        .font(compact ? .title2.weight(.semibold) : .title.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(3)
+                        .textSelection(.enabled)
+
+                    HStack(spacing: 8) {
+                        if let releaseYear = game.releaseYear {
+                            GameHeroPill(text: String(releaseYear))
+                        }
+
+                        GameHeroPill(text: game.copyCount == 1 ? "1 copia" : "\(game.copyCount) copias")
+
+                        if let ratingLabel = game.ratingLabel {
+                            GameHeroPill(text: ratingLabel)
+                        }
+                    }
+
+                    Text("Añadido el \(game.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.76))
+                }
+                .padding(.bottom, 4)
+            }
+            .padding(compact ? 16 : 20)
+        }
+    }
+}
+
+private struct GameHeroPill: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(.white.opacity(0.16), in: Capsule(style: .continuous))
     }
 }
 
@@ -257,14 +371,147 @@ private struct GameImportedMetadataSection: View {
                     )
                 }
             }
+        }
+    }
+}
 
-            if let url = URL(string: game.igdbURL), !game.igdbURL.isEmpty {
-                Link(destination: url) {
-                    Label("Ver en IGDB", systemImage: "arrow.up.forward.square")
+private struct GameTagsSection: View {
+    let game: Game
+    var showsTitle = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if showsTitle {
+                Text("Etiquetas")
+                    .font(.headline)
+            }
+
+            if game.sortedTags.isEmpty {
+                Text("Este juego no tiene etiquetas.")
+                    .foregroundStyle(.tertiary)
+            } else {
+                FlowLayout(spacing: 8) {
+                    ForEach(game.sortedTags) { tag in
+                        GamePill(text: tag.name)
+                    }
                 }
-                .font(.callout)
             }
         }
+    }
+}
+
+private struct GameExternalLinksSection: View {
+    let game: Game
+    var showsTitle = true
+
+    private var links: [ExternalGameLink] {
+        ExternalGameLink.links(for: game)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if showsTitle {
+                Text("Enlaces")
+                    .font(.headline)
+            }
+
+            if links.isEmpty {
+                Text("No hay enlaces disponibles para este juego.")
+                    .foregroundStyle(.tertiary)
+            } else {
+                FlowLayout(spacing: 8) {
+                    ForEach(links) { link in
+                        Link(destination: link.url) {
+                            Label(link.title, systemImage: link.systemImage)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct ExternalGameLink: Identifiable {
+    let id: String
+    let title: String
+    let systemImage: String
+    let url: URL
+
+    static func links(for game: Game) -> [ExternalGameLink] {
+        var links = [ExternalGameLink]()
+
+        if let igdbURL = URL(string: game.igdbURL), !game.igdbURL.isEmpty {
+            links.append(
+                ExternalGameLink(
+                    id: "igdb",
+                    title: "IGDB",
+                    systemImage: "gamecontroller",
+                    url: igdbURL
+                )
+            )
+        }
+
+        appendSearchLink(
+            id: "steam",
+            title: "Steam",
+            systemImage: "bag",
+            base: "https://store.steampowered.com/search/?term=",
+            query: game.title,
+            to: &links
+        )
+        appendSearchLink(
+            id: "hltb",
+            title: "HowLongToBeat",
+            systemImage: "clock",
+            base: "https://howlongtobeat.com/?q=",
+            query: game.title,
+            to: &links
+        )
+        appendSearchLink(
+            id: "youtube",
+            title: "YouTube",
+            systemImage: "play.rectangle",
+            base: "https://www.youtube.com/results?search_query=",
+            query: "\(game.title) trailer gameplay",
+            to: &links
+        )
+        appendSearchLink(
+            id: "wiki",
+            title: "Wiki",
+            systemImage: "book",
+            base: "https://duckduckgo.com/?q=",
+            query: "\(game.title) wiki",
+            to: &links
+        )
+        appendSearchLink(
+            id: "guides",
+            title: "Guías",
+            systemImage: "map",
+            base: "https://duckduckgo.com/?q=",
+            query: "\(game.title) guide",
+            to: &links
+        )
+
+        return links
+    }
+
+    private static func appendSearchLink(
+        id: String,
+        title: String,
+        systemImage: String,
+        base: String,
+        query: String,
+        to links: inout [ExternalGameLink]
+    ) {
+        guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: base + encodedQuery)
+        else {
+            return
+        }
+
+        links.append(ExternalGameLink(id: id, title: title, systemImage: systemImage, url: url))
     }
 }
 
@@ -344,6 +591,8 @@ private struct GameCopiesSection: View {
     var onAddPlaythrough: ((GameCopy) -> Void)?
     var onEditCopy: ((GameCopy) -> Void)?
     var onEditPlaythrough: ((GamePlaythrough) -> Void)?
+    var onDeleteCopy: ((GameCopy) -> Void)?
+    var onDeletePlaythrough: ((GamePlaythrough) -> Void)?
     var showsTitle = true
 
     var body: some View {
@@ -367,7 +616,9 @@ private struct GameCopiesSection: View {
                             copy: copy,
                             onAddPlaythrough: onAddPlaythrough,
                             onEditCopy: onEditCopy,
-                            onEditPlaythrough: onEditPlaythrough
+                            onEditPlaythrough: onEditPlaythrough,
+                            onDeleteCopy: onDeleteCopy,
+                            onDeletePlaythrough: onDeletePlaythrough
                         )
                             .padding(.vertical, 12)
                     }
@@ -382,6 +633,8 @@ private struct GameCopyRow: View {
     var onAddPlaythrough: ((GameCopy) -> Void)?
     var onEditCopy: ((GameCopy) -> Void)?
     var onEditPlaythrough: ((GamePlaythrough) -> Void)?
+    var onDeleteCopy: ((GameCopy) -> Void)?
+    var onDeletePlaythrough: ((GamePlaythrough) -> Void)?
 
     private var subtitle: String {
         [
@@ -411,6 +664,16 @@ private struct GameCopyRow: View {
                     .help("Editar copia")
                 }
 
+                if let onDeleteCopy {
+                    Button(role: .destructive) {
+                        onDeleteCopy(copy)
+                    } label: {
+                        Label("Eliminar copia", systemImage: "trash")
+                    }
+                    .labelStyle(.iconOnly)
+                    .platformInlineActionButtonStyle()
+                    .help("Eliminar copia")
+                }
             }
 
             if !subtitle.isEmpty {
@@ -454,7 +717,8 @@ private struct GameCopyRow: View {
                             GamePlaythroughRow(
                                 playthrough: playthrough,
                                 number: index + 1,
-                                onEdit: onEditPlaythrough
+                                onEdit: onEditPlaythrough,
+                                onDelete: onDeletePlaythrough
                             )
                         }
                     }
@@ -471,6 +735,7 @@ private struct GamePlaythroughRow: View {
     let playthrough: GamePlaythrough
     let number: Int
     var onEdit: ((GamePlaythrough) -> Void)?
+    var onDelete: ((GamePlaythrough) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -494,6 +759,17 @@ private struct GamePlaythroughRow: View {
                     .labelStyle(.iconOnly)
                     .platformInlineActionButtonStyle()
                     .help("Editar partida")
+                }
+
+                if let onDelete {
+                    Button(role: .destructive) {
+                        onDelete(playthrough)
+                    } label: {
+                        Label("Eliminar partida", systemImage: "trash")
+                    }
+                    .labelStyle(.iconOnly)
+                    .platformInlineActionButtonStyle()
+                    .help("Eliminar partida")
                 }
 
                 Text(playthrough.createdAt.formatted(date: .abbreviated, time: .omitted))

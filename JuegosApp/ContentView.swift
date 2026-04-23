@@ -15,6 +15,7 @@ extension Notification.Name {
 
 private enum LibrarySidebarItem {
     static let allGames = "Todas"
+    static let wishlist = "__wishlist__"
     static let lists = "__lists__"
 }
 
@@ -36,6 +37,7 @@ struct ContentView: View {
     @State private var metadataImportGame: Game?
     @State private var copyToEdit: GameCopy?
     @State private var playthroughToEdit: GamePlaythrough?
+    @State private var metadataUpdateMessage: String?
 
     private var usedPlatforms: [String] {
         let platformsInLibrary = Set(
@@ -61,18 +63,30 @@ struct ContentView: View {
     }
 
     private var platformOptions: [String] {
-        [LibrarySidebarItem.allGames] + usedPlatforms
+        [LibrarySidebarItem.allGames, LibrarySidebarItem.wishlist] + usedPlatforms
     }
 
     private var isShowingLists: Bool {
         selectedPlatform == LibrarySidebarItem.lists
     }
 
+    private var wishlistGames: [Game] {
+        games.filter(\.isWishlistItem)
+    }
+
     private var filteredGames: [Game] {
         games.filter { game in
-            let matchesPlatform = selectedPlatform == LibrarySidebarItem.allGames
-                || isShowingLists
-                || game.sortedCopies.contains(where: { $0.platform == selectedPlatform })
+            let matchesPlatform: Bool = switch selectedPlatform {
+            case LibrarySidebarItem.allGames:
+                true
+            case LibrarySidebarItem.wishlist:
+                game.isWishlistItem
+            case LibrarySidebarItem.lists:
+                true
+            default:
+                game.sortedCopies.contains(where: { $0.platform == selectedPlatform })
+            }
+
             let matchesSearch = searchText.isEmpty
                 || containsSearchText(in: game.title)
                 || containsSearchText(in: game.searchableCopyText)
@@ -119,6 +133,7 @@ struct ContentView: View {
                 allGameLists: gameLists,
                 gameListCount: gameLists.count,
                 totalCount: games.count,
+                wishlistCount: wishlistGames.count,
                 searchText: $searchText,
                 selectedPlatform: $selectedPlatform,
                 selectedGame: $selectedGame,
@@ -132,7 +147,9 @@ struct ContentView: View {
                 onAddPlaythrough: openPlaythroughSheet,
                 onImportMetadata: openMetadataImporter,
                 onEditCopy: openCopyEditSheet,
-                onEditPlaythrough: openPlaythroughEditSheet
+                onEditPlaythrough: openPlaythroughEditSheet,
+                onDeleteCopy: deleteCopy,
+                onDeletePlaythrough: deletePlaythrough
             )
 #else
             IOSLibraryView(
@@ -141,6 +158,7 @@ struct ContentView: View {
                 gameLists: filteredGameLists,
                 allGameLists: gameLists,
                 totalCount: games.count,
+                wishlistCount: wishlistGames.count,
                 searchText: $searchText,
                 selectedPlatform: $selectedPlatform,
                 gamesNavigationPath: $gamesNavigationPath,
@@ -154,15 +172,28 @@ struct ContentView: View {
                 onAddPlaythrough: openPlaythroughSheet,
                 onImportMetadata: openMetadataImporter,
                 onEditCopy: openCopyEditSheet,
-                onEditPlaythrough: openPlaythroughEditSheet
+                onEditPlaythrough: openPlaythroughEditSheet,
+                onDeleteCopy: deleteCopy,
+                onDeletePlaythrough: deletePlaythrough
             )
 #endif
         }
         .sheet(isPresented: $showingAddSheet) {
-            GameFormView { game in
-                selectedPlatform = LibrarySidebarItem.allGames
-                selectedGame = game
-            }
+            GameFormView(
+                onCreate: { game in
+                    selectedPlatform = LibrarySidebarItem.wishlist
+                    selectedGame = game
+                },
+                onOpenExisting: { game in
+                    selectedPlatform = game.isWishlistItem ? LibrarySidebarItem.wishlist : LibrarySidebarItem.allGames
+                    selectedGame = game
+                },
+                onAddCopyToExisting: { game in
+                    selectedPlatform = game.isWishlistItem ? LibrarySidebarItem.wishlist : LibrarySidebarItem.allGames
+                    selectedGame = game
+                    copyHostGame = game
+                }
+            )
         }
         .sheet(isPresented: $showingListSheet) {
             GameListFormView(onSave: createGameList)
@@ -181,6 +212,20 @@ struct ContentView: View {
         }
         .sheet(item: $playthroughToEdit) { playthrough in
             GamePlaythroughEditFormView(playthrough: playthrough)
+        }
+        .alert("IGDB", isPresented: Binding(
+            get: { metadataUpdateMessage != nil },
+            set: { isPresented in
+                if !isPresented {
+                    metadataUpdateMessage = nil
+                }
+            }
+        )) {
+            Button("OK", role: .cancel) {
+                metadataUpdateMessage = nil
+            }
+        } message: {
+            Text(metadataUpdateMessage ?? "")
         }
         .onAppear {
             migrateLegacyPlaythroughsIfNeeded()
@@ -243,6 +288,26 @@ struct ContentView: View {
         }
     }
 
+    private func deleteCopy(_ copy: GameCopy) {
+        withAnimation {
+            if copyToEdit?.persistentModelID == copy.persistentModelID {
+                copyToEdit = nil
+            }
+
+            modelContext.delete(copy)
+        }
+    }
+
+    private func deletePlaythrough(_ playthrough: GamePlaythrough) {
+        withAnimation {
+            if playthroughToEdit?.persistentModelID == playthrough.persistentModelID {
+                playthroughToEdit = nil
+            }
+
+            modelContext.delete(playthrough)
+        }
+    }
+
     private func openCopySheet(for game: Game) {
         copyHostGame = game
     }
@@ -252,7 +317,30 @@ struct ContentView: View {
     }
 
     private func openMetadataImporter(for game: Game) {
-        metadataImportGame = game
+        guard let igdbID = game.igdbID else {
+            metadataImportGame = game
+            return
+        }
+
+        Task {
+            await updateMetadata(for: game, igdbID: igdbID)
+        }
+    }
+
+    @MainActor
+    private func updateMetadata(for game: Game, igdbID: Int) async {
+        do {
+            guard let metadata = try await IGDBMetadataService(credentials: IGDBCredentialsStore.load()).game(id: igdbID) else {
+                metadataUpdateMessage = "IGDB no devolvió metadatos para este juego."
+                return
+            }
+
+            game.applyIGDBMetadata(metadata)
+            try game.applyIGDBTags(from: metadata, in: modelContext)
+            try modelContext.save()
+        } catch {
+            metadataUpdateMessage = error.localizedDescription
+        }
     }
 
     private func openCopyEditSheet(for copy: GameCopy) {
@@ -301,6 +389,7 @@ struct ContentView: View {
 
     private func syncSelectedPlatformIfNeeded() {
         guard selectedPlatform != LibrarySidebarItem.allGames,
+              selectedPlatform != LibrarySidebarItem.wishlist,
               selectedPlatform != LibrarySidebarItem.lists,
               !usedPlatforms.contains(selectedPlatform)
         else {
@@ -363,6 +452,7 @@ private struct MacLibraryView: View {
     let allGameLists: [GameList]
     let gameListCount: Int
     let totalCount: Int
+    let wishlistCount: Int
     @Binding var searchText: String
     @Binding var selectedPlatform: String
     @Binding var selectedGame: Game?
@@ -377,13 +467,17 @@ private struct MacLibraryView: View {
     let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
+    let onDeleteCopy: (GameCopy) -> Void
+    let onDeletePlaythrough: (GamePlaythrough) -> Void
 
     @State private var detailNavigationPath = [GameLibraryDetailRoute]()
     @State private var gamePendingDeletion: Game?
     @State private var listPendingDeletion: GameList?
 
     private var availablePlatforms: [String] {
-        Array(platformOptions.dropFirst())
+        platformOptions.filter { option in
+            option != LibrarySidebarItem.allGames && option != LibrarySidebarItem.wishlist
+        }
     }
 
     private var isShowingLists: Bool {
@@ -415,6 +509,13 @@ private struct MacLibraryView: View {
                         count: totalCount
                     )
                     .tag(LibrarySidebarItem.allGames)
+
+                    SidebarFilterRow(
+                        title: "Wishlist",
+                        systemImage: "sparkles.rectangle.stack",
+                        count: wishlistCount
+                    )
+                    .tag(LibrarySidebarItem.wishlist)
                 }
 
                 Section("Plataformas") {
@@ -464,7 +565,7 @@ private struct MacLibraryView: View {
                     .environment(\.defaultMinListRowHeight, 54)
                 }
             }
-            .navigationTitle(isShowingLists ? "Listas" : selectedPlatform == LibrarySidebarItem.allGames ? "Juegos" : selectedPlatform)
+            .navigationTitle(navigationTitle)
             .onDeleteCommand(perform: requestDelete)
             .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 380)
         } detail: {
@@ -481,7 +582,9 @@ private struct MacLibraryView: View {
                         onAddPlaythrough: onAddPlaythrough,
                         onImportMetadata: onImportMetadata,
                         onEditCopy: onEditCopy,
-                        onEditPlaythrough: onEditPlaythrough
+                        onEditPlaythrough: onEditPlaythrough,
+                        onDeleteCopy: onDeleteCopy,
+                        onDeletePlaythrough: onDeletePlaythrough
                     )
                 } else {
                     GameListSelectionPlaceholderView()
@@ -502,6 +605,8 @@ private struct MacLibraryView: View {
                         onAddPlaythrough: onAddPlaythrough,
                         onEditCopy: onEditCopy,
                         onEditPlaythrough: onEditPlaythrough,
+                        onDeleteCopy: onDeleteCopy,
+                        onDeletePlaythrough: onDeletePlaythrough,
                         onOpenList: openListInDetail
                     )
                     .navigationDestination(for: GameLibraryDetailRoute.self) { route in
@@ -521,6 +626,10 @@ private struct MacLibraryView: View {
         .navigationSplitViewStyle(.balanced)
         .searchable(text: $searchText, prompt: isShowingLists ? "Buscar listas" : "Buscar por título, plataforma o estado")
         .toolbar {
+            ToolbarItem(placement: .automatic) {
+                ICloudSyncStatusMenu()
+            }
+
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     if isShowingLists {
@@ -582,6 +691,8 @@ private struct MacLibraryView: View {
                     onAddPlaythrough: onAddPlaythrough,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough,
+                    onDeleteCopy: onDeleteCopy,
+                    onDeletePlaythrough: onDeletePlaythrough,
                     onOpenList: openListInDetail
                 )
             } else {
@@ -601,7 +712,9 @@ private struct MacLibraryView: View {
                     onAddPlaythrough: onAddPlaythrough,
                     onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
-                    onEditPlaythrough: onEditPlaythrough
+                    onEditPlaythrough: onEditPlaythrough,
+                    onDeleteCopy: onDeleteCopy,
+                    onDeletePlaythrough: onDeletePlaythrough
                 )
             } else {
                 ContentUnavailableView(
@@ -621,6 +734,22 @@ private struct MacLibraryView: View {
         detailNavigationPath.append(.list(list.persistentModelID))
     }
 
+    private var navigationTitle: String {
+        if isShowingLists {
+            return "Listas"
+        }
+
+        if selectedPlatform == LibrarySidebarItem.allGames {
+            return "Juegos"
+        }
+
+        if selectedPlatform == LibrarySidebarItem.wishlist {
+            return "Wishlist"
+        }
+
+        return selectedPlatform
+    }
+
     private func requestDelete() {
         if isShowingLists {
             listPendingDeletion = selectedGameList
@@ -636,6 +765,7 @@ private struct IOSLibraryView: View {
     let gameLists: [GameList]
     let allGameLists: [GameList]
     let totalCount: Int
+    let wishlistCount: Int
     @Binding var searchText: String
     @Binding var selectedPlatform: String
     @Binding var gamesNavigationPath: [GameLibraryDetailRoute]
@@ -650,6 +780,8 @@ private struct IOSLibraryView: View {
     let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
+    let onDeleteCopy: (GameCopy) -> Void
+    let onDeletePlaythrough: (GamePlaythrough) -> Void
 
     var body: some View {
         TabView {
@@ -658,6 +790,7 @@ private struct IOSLibraryView: View {
                 games: games,
                 allGameLists: allGameLists,
                 totalCount: totalCount,
+                wishlistCount: wishlistCount,
                 searchText: $searchText,
                 selectedPlatform: $selectedPlatform,
                 navigationPath: $gamesNavigationPath,
@@ -668,7 +801,9 @@ private struct IOSLibraryView: View {
                 onAddPlaythrough: onAddPlaythrough,
                 onImportMetadata: onImportMetadata,
                 onEditCopy: onEditCopy,
-                onEditPlaythrough: onEditPlaythrough
+                onEditPlaythrough: onEditPlaythrough,
+                onDeleteCopy: onDeleteCopy,
+                onDeletePlaythrough: onDeletePlaythrough
             )
             .tabItem {
                 Label("Juegos", systemImage: "gamecontroller.fill")
@@ -686,7 +821,9 @@ private struct IOSLibraryView: View {
                 onAddPlaythrough: onAddPlaythrough,
                 onImportMetadata: onImportMetadata,
                 onEditCopy: onEditCopy,
-                onEditPlaythrough: onEditPlaythrough
+                onEditPlaythrough: onEditPlaythrough,
+                onDeleteCopy: onDeleteCopy,
+                onDeletePlaythrough: onDeletePlaythrough
             )
             .tabItem {
                 Label("Listas", systemImage: "list.bullet.rectangle.fill")
@@ -700,6 +837,7 @@ private struct IOSGamesLibraryTab: View {
     let games: [Game]
     let allGameLists: [GameList]
     let totalCount: Int
+    let wishlistCount: Int
     @Binding var searchText: String
     @Binding var selectedPlatform: String
     @Binding var navigationPath: [GameLibraryDetailRoute]
@@ -711,12 +849,18 @@ private struct IOSGamesLibraryTab: View {
     let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
+    let onDeleteCopy: (GameCopy) -> Void
+    let onDeletePlaythrough: (GamePlaythrough) -> Void
 
     @State private var gamePendingDeletion: Game?
 
     private var gameCountSummary: String {
         if selectedPlatform == LibrarySidebarItem.allGames {
             return totalCount == 1 ? "1 juego" : "\(totalCount) juegos"
+        }
+
+        if selectedPlatform == LibrarySidebarItem.wishlist {
+            return wishlistCount == 1 ? "1 juego en wishlist" : "\(wishlistCount) juegos en wishlist"
         }
 
         let visible = games.count == 1 ? "1 juego" : "\(games.count) juegos"
@@ -792,15 +936,14 @@ private struct IOSGamesLibraryTab: View {
 
     private var platformFilterMenu: some View {
         Menu {
-            ForEach(platformOptions, id: \.self) { platform in
-                Button {
-                    selectedPlatform = platform
-                } label: {
-                    if selectedPlatform == platform {
-                        Label(displayName(for: platform), systemImage: "checkmark")
-                    } else {
-                        Text(displayName(for: platform))
-                    }
+            Section("Biblioteca") {
+                filterButton(for: LibrarySidebarItem.allGames)
+                filterButton(for: LibrarySidebarItem.wishlist)
+            }
+
+            Section("Plataformas") {
+                ForEach(platformOptions.filter { $0 != LibrarySidebarItem.allGames && $0 != LibrarySidebarItem.wishlist }, id: \.self) { platform in
+                    filterButton(for: platform)
                 }
             }
         } label: {
@@ -809,8 +952,27 @@ private struct IOSGamesLibraryTab: View {
         .accessibilityLabel("Filtrar por plataforma")
     }
 
+    private func filterButton(for value: String, title: String? = nil) -> some View {
+        Button {
+            selectedPlatform = value
+        } label: {
+            if selectedPlatform == value {
+                Label(title ?? displayName(for: value), systemImage: "checkmark")
+            } else {
+                Text(title ?? displayName(for: value))
+            }
+        }
+    }
+
     private func displayName(for platform: String) -> String {
-        platform == LibrarySidebarItem.allGames ? "Todas las plataformas" : platform
+        switch platform {
+        case LibrarySidebarItem.allGames:
+            return "Todas las plataformas"
+        case LibrarySidebarItem.wishlist:
+            return "Wishlist"
+        default:
+            return platform
+        }
     }
 
     private func gameDestination(for game: Game) -> some View {
@@ -828,6 +990,8 @@ private struct IOSGamesLibraryTab: View {
             onAddPlaythrough: onAddPlaythrough,
             onEditCopy: onEditCopy,
             onEditPlaythrough: onEditPlaythrough,
+            onDeleteCopy: onDeleteCopy,
+            onDeletePlaythrough: onDeletePlaythrough,
             onOpenList: open
         )
         .navigationBarTitleDisplayMode(.inline)
@@ -852,7 +1016,9 @@ private struct IOSGamesLibraryTab: View {
                     onAddPlaythrough: onAddPlaythrough,
                     onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
-                    onEditPlaythrough: onEditPlaythrough
+                    onEditPlaythrough: onEditPlaythrough,
+                    onDeleteCopy: onDeleteCopy,
+                    onDeletePlaythrough: onDeletePlaythrough
                 )
             } else {
                 ContentUnavailableView(
@@ -886,6 +1052,8 @@ private struct IOSListsLibraryTab: View {
     let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
+    let onDeleteCopy: (GameCopy) -> Void
+    let onDeletePlaythrough: (GamePlaythrough) -> Void
 
     @State private var listPendingDeletion: GameList?
 
@@ -985,7 +1153,9 @@ private struct IOSListsLibraryTab: View {
                     onAddPlaythrough: onAddPlaythrough,
                     onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
-                    onEditPlaythrough: onEditPlaythrough
+                    onEditPlaythrough: onEditPlaythrough,
+                    onDeleteCopy: onDeleteCopy,
+                    onDeletePlaythrough: onDeletePlaythrough
                 )
             } else {
                 ContentUnavailableView(
@@ -1009,6 +1179,8 @@ private struct IOSListsLibraryTab: View {
             onAddPlaythrough: onAddPlaythrough,
             onEditCopy: onEditCopy,
             onEditPlaythrough: onEditPlaythrough,
+            onDeleteCopy: onDeleteCopy,
+            onDeletePlaythrough: onDeletePlaythrough,
             onOpenList: open
         )
         .navigationBarTitleDisplayMode(.inline)
@@ -1026,7 +1198,9 @@ private struct IOSListsLibraryTab: View {
             onAddPlaythrough: onAddPlaythrough,
             onImportMetadata: onImportMetadata,
             onEditCopy: onEditCopy,
-            onEditPlaythrough: onEditPlaythrough
+            onEditPlaythrough: onEditPlaythrough,
+            onDeleteCopy: onDeleteCopy,
+            onDeletePlaythrough: onDeletePlaythrough
         )
     }
 
@@ -1042,5 +1216,5 @@ private struct IOSListsLibraryTab: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [Game.self, GameList.self, GameListEntry.self, GameCopy.self, GamePlaythrough.self], inMemory: true)
+        .modelContainer(for: [Game.self, GameList.self, GameListEntry.self, GameCopy.self, GamePlaythrough.self, GameTag.self, GameTagAssignment.self], inMemory: true)
 }

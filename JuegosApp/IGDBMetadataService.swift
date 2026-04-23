@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import SwiftData
 
 struct IGDBCredentials: Equatable {
     var clientID: String
@@ -63,6 +64,8 @@ struct IGDBMetadataService {
     let credentials: IGDBCredentials
     var session: URLSession = .shared
 
+    private static let gameFields = "name,first_release_date,summary,total_rating,aggregated_rating,cover.url,cover.image_id,cover.width,cover.height,artworks.url,artworks.image_id,artworks.width,artworks.height,screenshots.url,screenshots.image_id,screenshots.width,screenshots.height,genres.name,themes.name,platforms.name,involved_companies.developer,involved_companies.publisher,involved_companies.company.name,url"
+
     func searchGames(matching searchText: String, limit: Int = 12, offset: Int = 0) async throws -> [IGDBGameMetadata] {
         let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard credentials.isComplete, !trimmedSearchText.isEmpty else {
@@ -80,6 +83,24 @@ struct IGDBMetadataService {
         let (data, response) = try await session.data(for: request)
         try Self.validate(response: response, data: data)
         return try JSONDecoder().decode([IGDBGameMetadata].self, from: data)
+    }
+
+    func game(id: Int) async throws -> IGDBGameMetadata? {
+        guard credentials.isComplete else {
+            throw IGDBMetadataError.missingCredentials
+        }
+
+        let accessToken = try await accessToken()
+        var request = URLRequest(url: URL(string: "https://api.igdb.com/v4/games")!)
+        request.httpMethod = "POST"
+        request.setValue(credentials.clientID.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "Client-ID")
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("text/plain", forHTTPHeaderField: "Content-Type")
+        request.httpBody = Self.gameBody(for: id).data(using: .utf8)
+
+        let (data, response) = try await session.data(for: request)
+        try Self.validate(response: response, data: data)
+        return try JSONDecoder().decode([IGDBGameMetadata].self, from: data).first
     }
 
     private func accessToken() async throws -> String {
@@ -129,10 +150,18 @@ struct IGDBMetadataService {
 
         return """
         search "\(escapedSearchString(searchText))";
-        fields name,first_release_date,summary,total_rating,aggregated_rating,cover.url,genres.name,platforms.name,involved_companies.developer,involved_companies.publisher,involved_companies.company.name,url;
+        fields \(gameFields);
         where version_parent = null;
         limit \(normalizedLimit);
         offset \(normalizedOffset);
+        """
+    }
+
+    private static func gameBody(for id: Int) -> String {
+        """
+        fields \(gameFields);
+        where id = \(id);
+        limit 1;
         """
     }
 
@@ -162,7 +191,10 @@ struct IGDBGameMetadata: Decodable, Hashable, Identifiable {
     let totalRating: Double?
     let aggregatedRating: Double?
     let cover: IGDBCover?
+    let artworks: [IGDBImageAsset]?
+    let screenshots: [IGDBImageAsset]?
     let genres: [IGDBNamedResource]?
+    let themes: [IGDBNamedResource]?
     let platforms: [IGDBNamedResource]?
     let involvedCompanies: [IGDBInvolvedCompany]?
     let url: String?
@@ -172,7 +204,10 @@ struct IGDBGameMetadata: Decodable, Hashable, Identifiable {
         case name
         case summary
         case cover
+        case artworks
+        case screenshots
         case genres
+        case themes
         case platforms
         case url
         case firstReleaseDate = "first_release_date"
@@ -191,17 +226,63 @@ struct IGDBGameMetadata: Decodable, Hashable, Identifiable {
     }
 
     var normalizedCoverURL: String {
-        guard var coverURL = cover?.url, !coverURL.isEmpty else { return "" }
-
-        if coverURL.hasPrefix("//") {
-            coverURL = "https:\(coverURL)"
+        if let imageID = cover?.imageID, !imageID.isEmpty {
+            return Self.imageURL(for: imageID, size: "t_cover_big")
         }
 
-        return coverURL.replacingOccurrences(of: "t_thumb", with: "t_cover_big")
+        return Self.normalizedImageURL(cover?.url, replacingSizeWith: "t_cover_big")
+    }
+
+    var normalizedHeroImageURL: String {
+        if let artwork = preferredHorizontalImage(in: artworks) {
+            return artwork.normalizedURL(size: "t_1080p")
+        }
+
+        if let screenshot = preferredHorizontalImage(in: screenshots) {
+            return screenshot.normalizedURL(size: "t_1080p")
+        }
+
+        return ""
+    }
+
+    var normalizedScreenshotURL: String {
+        guard let screenshot = preferredHorizontalImage(in: screenshots) ?? screenshots?.first else {
+            return ""
+        }
+
+        return screenshot.normalizedURL(size: "t_screenshot_big")
+    }
+
+    private func preferredHorizontalImage(in assets: [IGDBImageAsset]?) -> IGDBImageAsset? {
+        assets?.first { asset in
+            guard let width = asset.width, let height = asset.height else { return true }
+            return width >= height
+        }
+    }
+
+    static func normalizedImageURL(_ url: String?, replacingSizeWith size: String) -> String {
+        guard var imageURL = url, !imageURL.isEmpty else { return "" }
+
+        if imageURL.hasPrefix("//") {
+            imageURL = "https:\(imageURL)"
+        }
+
+        return imageURL.replacingOccurrences(of: "t_thumb", with: size)
+    }
+
+    private static func imageURL(for imageID: String, size: String) -> String {
+        "https://images.igdb.com/igdb/image/upload/\(size)/\(imageID).jpg"
     }
 
     var genresText: String {
         joinedUnique(genres?.map(\.name) ?? [])
+    }
+
+    var importedTagNames: [String] {
+        uniqueNames(
+            (genres ?? [])
+            + (themes ?? [])
+        )
     }
 
     var platformsText: String {
@@ -244,19 +325,55 @@ struct IGDBGameMetadata: Decodable, Hashable, Identifiable {
     }
 
     private func joinedUnique(_ values: [String]) -> String {
+        uniqueNames(values).joined(separator: ", ")
+    }
+
+    private func uniqueNames(_ resources: [IGDBNamedResource]) -> [String] {
+        uniqueNames(resources.map(\.name))
+    }
+
+    private func uniqueNames(_ values: [String]) -> [String] {
         var uniqueValues = [String]()
 
-        for value in values where !value.isEmpty && !uniqueValues.contains(value) {
-            uniqueValues.append(value)
+        for value in values {
+            let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !trimmedValue.isEmpty,
+                  !uniqueValues.contains(where: { $0.localizedCaseInsensitiveCompare(trimmedValue) == .orderedSame })
+            else {
+                continue
+            }
+
+            uniqueValues.append(trimmedValue)
         }
 
-        return uniqueValues.joined(separator: ", ")
+        return uniqueValues
     }
 }
 
-struct IGDBCover: Decodable, Hashable {
+struct IGDBImageAsset: Decodable, Hashable {
     let url: String?
+    let imageID: String?
+    let width: Int?
+    let height: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case url
+        case imageID = "image_id"
+        case width
+        case height
+    }
+
+    func normalizedURL(size: String) -> String {
+        if let imageID, !imageID.isEmpty {
+            return "https://images.igdb.com/igdb/image/upload/\(size)/\(imageID).jpg"
+        }
+
+        return IGDBGameMetadata.normalizedImageURL(url, replacingSizeWith: size)
+    }
 }
+
+typealias IGDBCover = IGDBImageAsset
 
 struct IGDBNamedResource: Decodable, Hashable {
     let name: String
@@ -325,7 +442,21 @@ extension Game {
         }
 
         igdbID = metadata.id
-        coverURL = metadata.normalizedCoverURL
+        let normalizedCoverURL = metadata.normalizedCoverURL
+        let normalizedHeroImageURL = metadata.normalizedHeroImageURL
+        let normalizedScreenshotURL = metadata.normalizedScreenshotURL
+
+        if !normalizedCoverURL.isEmpty {
+            coverURL = normalizedCoverURL
+        }
+
+        if !normalizedHeroImageURL.isEmpty {
+            heroImageURL = normalizedHeroImageURL
+        }
+
+        if !normalizedScreenshotURL.isEmpty {
+            screenshotURL = normalizedScreenshotURL
+        }
         summary = metadata.summary ?? ""
         genresText = metadata.genresText
         developersText = metadata.developersText
@@ -333,5 +464,41 @@ extension Game {
         igdbURL = metadata.url ?? ""
         totalRating = metadata.rating
         metadataImportedAt = .now
+    }
+
+    func applyIGDBTags(from metadata: IGDBGameMetadata, in modelContext: ModelContext) throws {
+        for tagName in metadata.importedTagNames {
+            let normalizedName = GameTag.normalized(tagName)
+            guard !normalizedName.isEmpty, !hasTag(normalizedName: normalizedName) else {
+                continue
+            }
+
+            let tag = try existingTag(normalizedName: normalizedName, in: modelContext) ?? {
+                let tag = GameTag(name: tagName)
+                modelContext.insert(tag)
+                return tag
+            }()
+
+            let assignment = GameTagAssignment(game: self, tag: tag)
+            modelContext.insert(assignment)
+
+            var currentAssignments = tagAssignments ?? []
+            currentAssignments.append(assignment)
+            tagAssignments = currentAssignments
+        }
+    }
+
+    private func hasTag(normalizedName: String) -> Bool {
+        sortedTags.contains { $0.normalizedName == normalizedName }
+    }
+
+    private func existingTag(normalizedName: String, in modelContext: ModelContext) throws -> GameTag? {
+        var descriptor = FetchDescriptor<GameTag>(
+            predicate: #Predicate<GameTag> { tag in
+                tag.normalizedName == normalizedName
+            }
+        )
+        descriptor.fetchLimit = 1
+        return try modelContext.fetch(descriptor).first
     }
 }

@@ -244,5 +244,5 @@ private struct EditCopySheetRow<Content: View>: View {
     game.addCopy(copy)
 
     return GameCopyEditFormView(copy: copy)
-        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self], inMemory: true)
+        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self, GameTag.self, GameTagAssignment.self], inMemory: true)
 }

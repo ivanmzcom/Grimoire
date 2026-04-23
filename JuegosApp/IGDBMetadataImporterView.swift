@@ -224,6 +224,7 @@ struct IGDBMetadataImporterView: View {
         game.applyIGDBMetadata(metadata)
 
         do {
+            try game.applyIGDBTags(from: metadata, in: modelContext)
             try modelContext.save()
             dismiss()
         } catch {
@@ -284,32 +285,9 @@ private struct IGDBMetadataResultRow: View {
     }
 }
 
-#if os(macOS)
-struct IGDBSettingsView: View {
-    private let credentials = IGDBCredentialsStore.load()
-
-    var body: some View {
-        Form {
-            Section("Credenciales") {
-                LabeledContent("Archivo", value: "JuegosApp/Secrets.plist")
-                LabeledContent("IGDBClientID", value: credentials.clientID.isEmpty ? "No configurado" : "Configurado")
-                LabeledContent("IGDBClientSecret", value: credentials.clientSecret.isEmpty ? "No configurado" : "Configurado")
-            }
-
-            Section("Formato") {
-                Text("Copia `Secrets.plist.example` a `JuegosApp/Secrets.plist` y rellena `IGDBClientID` y `IGDBClientSecret`.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .formStyle(.grouped)
-    }
-}
-#endif
-
 #Preview {
     let game = Game(title: "Metaphor: ReFantazio", releaseYear: 2024)
 
     return IGDBMetadataImporterView(game: game)
-        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self], inMemory: true)
+        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self, GameTag.self, GameTagAssignment.self], inMemory: true)
 }
