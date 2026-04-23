@@ -29,6 +29,7 @@ Pods/
 .build/
 
 # fastlane
+fastlane/
 fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
@@ -42,3 +43,6 @@ fastlane/test_output/
 
 # Local app secrets
 /JuegosApp/Secrets.plist
+
+# Local Codex environment
+/.codex/environments/environment.toml
