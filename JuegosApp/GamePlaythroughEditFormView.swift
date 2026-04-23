@@ -230,7 +230,7 @@ private struct PlaythroughEditSheetRow<Content: View>: View {
 
 #Preview {
     let game = Game(title: "Metroid Prime Remastered", releaseYear: 2023)
-    let copy = GameCopy(platform: "Nintendo Switch", format: "Fisico", notes: "Edicion launch")
+    let copy = GameCopy(platform: "Nintendo Switch", format: "Físico", notes: "Edición launch")
     let playthrough = GamePlaythrough(status: "Jugando", notes: "Ruta casual al 63%.")
 
     game.copies.append(copy)

@@ -13,6 +13,8 @@ struct JuegosAppApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Game.self,
+            GameList.self,
+            GameListEntry.self,
             GameCopy.self,
             GamePlaythrough.self,
         ])
@@ -40,6 +42,11 @@ struct JuegosAppApp: App {
                     NotificationCenter.default.post(name: .openNewGame, object: nil)
                 }
                 .keyboardShortcut("n")
+
+                Button("Nueva lista") {
+                    NotificationCenter.default.post(name: .openNewList, object: nil)
+                }
+                .keyboardShortcut("n", modifiers: [.command, .shift])
             }
 
             SidebarCommands()

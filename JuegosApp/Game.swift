@@ -14,6 +14,7 @@ final class Game {
     var releaseYear: Int?
     var createdAt: Date
     @Relationship(deleteRule: .cascade, inverse: \GameCopy.game) var copies: [GameCopy] = []
+    @Relationship(deleteRule: .cascade, inverse: \GameListEntry.game) var listEntries: [GameListEntry] = []
 
     init(
         title: String,
@@ -80,6 +81,30 @@ final class Game {
         sortedCopies.first
     }
 
+    var includedLists: [GameList] {
+        var uniqueLists = [GameList]()
+
+        for entry in listEntries {
+            guard let list = entry.list,
+                  !uniqueLists.contains(where: { $0.persistentModelID == list.persistentModelID })
+            else {
+                continue
+            }
+
+            uniqueLists.append(list)
+        }
+
+        return uniqueLists.sorted { lhs, rhs in
+            let titleComparison = lhs.title.localizedStandardCompare(rhs.title)
+
+            if titleComparison == .orderedSame {
+                return lhs.createdAt < rhs.createdAt
+            }
+
+            return titleComparison == .orderedAscending
+        }
+    }
+
     var detailSummary: String {
         var pieces = [String]()
 
@@ -122,6 +147,71 @@ final class Game {
         }
 
         return uniqueValues.isEmpty ? fallback : uniqueValues.joined(separator: ", ")
+    }
+}
+
+@Model
+final class GameList {
+    var title: String
+    var createdAt: Date
+    @Relationship(deleteRule: .cascade, inverse: \GameListEntry.list) var entries: [GameListEntry] = []
+
+    init(
+        title: String,
+        createdAt: Date = .now
+    ) {
+        self.title = title
+        self.createdAt = createdAt
+    }
+
+    var sortedEntries: [GameListEntry] {
+        entries.sorted { lhs, rhs in
+            if lhs.sortIndex == rhs.sortIndex {
+                return lhs.addedAt < rhs.addedAt
+            }
+
+            return lhs.sortIndex < rhs.sortIndex
+        }
+    }
+
+    var games: [Game] {
+        sortedEntries.compactMap(\.game)
+    }
+
+    var gameCount: Int {
+        games.count
+    }
+
+    var gameCountLabel: String {
+        gameCount == 1 ? "1 juego" : "\(gameCount) juegos"
+    }
+
+    var nextSortIndex: Int {
+        (sortedEntries.last?.sortIndex ?? -1) + 1
+    }
+
+    func contains(_ game: Game) -> Bool {
+        entries.contains { entry in
+            entry.game?.persistentModelID == game.persistentModelID
+        }
+    }
+}
+
+@Model
+final class GameListEntry {
+    var sortIndex: Int
+    var addedAt: Date
+    var list: GameList?
+    var game: Game?
+
+    init(
+        game: Game? = nil,
+        sortIndex: Int,
+        addedAt: Date = .now
+    ) {
+        self.game = game
+        self.sortIndex = sortIndex
+        self.addedAt = addedAt
     }
 }
 
@@ -232,9 +322,9 @@ enum GameCatalog {
     ]
 
     static let formats = [
-        "Fisico",
+        "Físico",
         "Digital",
-        "Edicion coleccionista"
+        "Edición coleccionista"
     ]
 
     static let statuses = [

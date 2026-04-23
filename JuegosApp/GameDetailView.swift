@@ -15,6 +15,7 @@ struct GameDetailView: View {
     var onEditGame: (() -> Void)? = nil
     var onEditCopy: ((GameCopy) -> Void)? = nil
     var onEditPlaythrough: ((GamePlaythrough) -> Void)? = nil
+    var onOpenList: ((GameList) -> Void)? = nil
 
     private var copyCountLabel: String {
         game.copyCount == 1 ? "1 copia" : "\(game.copyCount) copias"
@@ -37,7 +38,7 @@ struct GameDetailView: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text(game.title)
-                            .font(.largeTitle.weight(.semibold))
+                            .font(.title.weight(.semibold))
                             .textSelection(.enabled)
 
                         if !gameSummary.isEmpty {
@@ -52,16 +53,15 @@ struct GameDetailView: View {
                     }
 
                     Spacer(minLength: 0)
-
-                    if let onEditGame {
-                        Button("Editar", action: onEditGame)
-                            .buttonStyle(.bordered)
-                    }
                 }
 
                 Divider()
 
                 GameMetadataGrid(game: game)
+
+                Divider()
+
+                GameIncludedInSection(game: game, onOpenList: onOpenList)
 
                 Divider()
 
@@ -78,52 +78,84 @@ struct GameDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationTitle(game.title)
+        .toolbar {
+            if hasGameActions {
+                ToolbarItem(placement: .primaryAction) {
+                    gameActionsMenu
+                }
+            }
+        }
 #else
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+        List {
+            Section {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(game.title)
-                            .font(.system(size: 34, weight: .bold, design: .rounded))
-
-                        Spacer()
-
-                        if let onEditGame {
-                            Button("Editar", action: onEditGame)
-                        }
-                    }
+                    Text(game.title)
+                        .font(.title2.weight(.semibold))
+                        .lineLimit(3)
 
                     if !gameSummary.isEmpty {
                         Text(gameSummary)
-                            .font(.title3)
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                 }
+                .padding(.vertical, 4)
+            }
 
-                DetailCard(title: "Ficha") {
-                    DetailRow(label: "Ano", value: game.releaseYear.map(String.init) ?? "Sin indicar")
-                    DetailRow(label: "Copias", value: copyCountLabel)
-                    DetailRow(label: "Partidas", value: game.playthroughCountLabel)
-                    DetailRow(label: "Anadido", value: game.createdAt.formatted(date: .abbreviated, time: .omitted))
-                }
+            Section("Ficha") {
+                DetailRow(label: "Año", value: game.releaseYear.map(String.init) ?? "Sin indicar")
+                DetailRow(label: "Copias", value: copyCountLabel)
+                DetailRow(label: "Partidas", value: game.playthroughCountLabel)
+                DetailRow(label: "Añadido", value: game.createdAt.formatted(date: .abbreviated, time: .omitted))
+            }
 
-                DetailCard(title: "Copias") {
-                    GameCopiesSection(
-                        game: game,
-                        onAddCopy: onAddCopy,
-                        onAddPlaythrough: onAddPlaythrough,
-                        onEditCopy: onEditCopy,
-                        onEditPlaythrough: onEditPlaythrough,
-                        showsTitle: false
-                    )
+            Section("Incluido en") {
+                GameIncludedInSection(game: game, showsTitle: false, onOpenList: onOpenList)
+            }
+
+            Section("Copias") {
+                GameCopiesSection(
+                    game: game,
+                    onAddCopy: onAddCopy,
+                    onAddPlaythrough: onAddPlaythrough,
+                    onEditCopy: onEditCopy,
+                    onEditPlaythrough: onEditPlaythrough,
+                    showsTitle: false
+                )
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(game.title)
+        .toolbar {
+            if hasGameActions {
+                ToolbarItem(placement: .primaryAction) {
+                    gameActionsMenu
                 }
             }
-            .padding(28)
-            .frame(maxWidth: 760, alignment: .leading)
         }
-        .navigationTitle(game.title)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 #endif
+    }
+
+    private var hasGameActions: Bool {
+        onEditGame != nil || onAddCopy != nil
+    }
+
+    private var gameActionsMenu: some View {
+        Menu {
+            if let onEditGame {
+                Button(action: onEditGame) {
+                    Label("Editar juego", systemImage: "pencil")
+                }
+            }
+
+            if let onAddCopy {
+                Button(action: onAddCopy) {
+                    Label("Añadir copia", systemImage: "square.stack.badge.plus")
+                }
+            }
+        } label: {
+            Label("Acciones", systemImage: "ellipsis.circle")
+        }
     }
 }
 
@@ -134,7 +166,7 @@ private struct GameMetadataGrid: View {
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 12) {
             GridRow {
-                Text("Ano")
+                Text("Año")
                     .foregroundStyle(.secondary)
                 Text(game.releaseYear.map(String.init) ?? "Sin indicar")
                     .textSelection(.enabled)
@@ -155,7 +187,7 @@ private struct GameMetadataGrid: View {
             }
 
             GridRow {
-                Text("Anadido")
+                Text("Añadido")
                     .foregroundStyle(.secondary)
                 Text(game.createdAt.formatted(date: .abbreviated, time: .omitted))
                     .textSelection(.enabled)
@@ -164,6 +196,77 @@ private struct GameMetadataGrid: View {
     }
 }
 #endif
+
+private struct GameIncludedInSection: View {
+    let game: Game
+    var showsTitle = true
+    var onOpenList: ((GameList) -> Void)? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if showsTitle {
+                Text("Incluido en")
+                    .font(.headline)
+            }
+
+            if game.includedLists.isEmpty {
+                Text("Este juego no está incluido en ninguna lista.")
+                    .foregroundStyle(.tertiary)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(game.includedLists.enumerated()), id: \.element.persistentModelID) { index, list in
+                        if index > 0 {
+                            Divider()
+                        }
+
+                        if let onOpenList {
+                            Button {
+                                onOpenList(list)
+                            } label: {
+                                GameIncludedListRow(list: list, showsChevron: true)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.vertical, 9)
+                        } else {
+                            GameIncludedListRow(list: list)
+                                .padding(.vertical, 9)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct GameIncludedListRow: View {
+    let list: GameList
+    var showsChevron = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "list.bullet.rectangle")
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+
+            Text(list.title)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            Text(list.gameCountLabel)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+}
 
 private struct GameCopiesSection: View {
     let game: Game
@@ -185,14 +288,16 @@ private struct GameCopiesSection: View {
                     Spacer()
 
                     if let onAddCopy {
-                        Button("Añadir copia", action: onAddCopy)
-                            .buttonStyle(.link)
+                        Button(action: onAddCopy) {
+                            Label("Añadir copia", systemImage: "plus")
+                        }
+                            .platformInlineActionButtonStyle()
                     }
                 }
             }
 
             if game.sortedCopies.isEmpty {
-                Text("Todavia no hay copias registradas para este juego.")
+                Text("Todavía no hay copias registradas para este juego.")
                     .foregroundStyle(.tertiary)
             } else {
                 VStack(alignment: .leading, spacing: 0) {
@@ -239,10 +344,14 @@ private struct GameCopyRow: View {
                 Spacer(minLength: 8)
 
                 if let onEditCopy {
-                    Button("Editar") {
+                    Button {
                         onEditCopy(copy)
+                    } label: {
+                        Label("Editar copia", systemImage: "pencil")
                     }
-                    .buttonStyle(.link)
+                    .labelStyle(.iconOnly)
+                    .platformInlineActionButtonStyle()
+                    .help("Editar copia")
                 }
 
             }
@@ -269,15 +378,17 @@ private struct GameCopyRow: View {
                     Spacer()
 
                     if let onAddPlaythrough {
-                        Button("Añadir partida") {
+                        Button {
                             onAddPlaythrough(copy)
+                        } label: {
+                            Label("Añadir partida", systemImage: "plus")
                         }
-                        .buttonStyle(.link)
+                        .platformInlineActionButtonStyle()
                     }
                 }
 
                 if copy.sortedPlaythroughs.isEmpty {
-                    Text("Todavia no hay partidas registradas para esta copia.")
+                    Text("Todavía no hay partidas registradas para esta copia.")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 } else {
@@ -295,6 +406,7 @@ private struct GameCopyRow: View {
             .padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -317,10 +429,14 @@ private struct GamePlaythroughRow: View {
                 Spacer(minLength: 8)
 
                 if let onEdit {
-                    Button("Editar") {
+                    Button {
                         onEdit(playthrough)
+                    } label: {
+                        Label("Editar partida", systemImage: "pencil")
                     }
-                    .buttonStyle(.link)
+                    .labelStyle(.iconOnly)
+                    .platformInlineActionButtonStyle()
+                    .help("Editar partida")
                 }
 
                 Text(playthrough.createdAt.formatted(date: .abbreviated, time: .omitted))
@@ -342,6 +458,7 @@ private struct GamePlaythroughRow: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color.primary.opacity(0.035))
         )
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -350,13 +467,18 @@ private struct DetailRow: View {
     let value: String
 
     var body: some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .multilineTextAlignment(.trailing)
-        }
+        LabeledContent(label, value: value)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func platformInlineActionButtonStyle() -> some View {
+#if os(macOS)
+        buttonStyle(.link)
+#else
+        buttonStyle(.borderless)
+#endif
     }
 }
 
@@ -368,8 +490,8 @@ private struct DetailRow: View {
     game.copies.append(
         GameCopy(
             platform: "Nintendo Switch",
-            format: "Fisico",
-            notes: "Edicion estandar con funda en buen estado."
+            format: "Físico",
+            notes: "Edición estándar con funda en buen estado."
         )
     )
     game.copies.append(

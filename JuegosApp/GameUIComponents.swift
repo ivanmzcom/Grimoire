@@ -84,6 +84,34 @@ struct SidebarFilterRow: View {
     }
 }
 
+struct GameListRowContent: View {
+    let list: GameList
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "list.bullet.rectangle")
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(list.title)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+
+                Text(list.gameCountLabel)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct GameCoverPlaceholder: View {
     let title: String
     var size: CGSize = CGSize(width: 28, height: 40)
@@ -124,13 +152,13 @@ struct GameCoverPlaceholder: View {
                 )
 
             Image(systemName: "gamecontroller.fill")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(5)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
 
             Text(monogram.isEmpty ? "?" : monogram)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
+                .font(.caption.weight(.bold))
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 4)
@@ -236,23 +264,34 @@ struct GameRowContent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
 #else
-        VStack(alignment: .leading, spacing: 8) {
-            Text(game.title)
-                .font(.headline)
-                .lineLimit(2)
+        HStack(alignment: .center, spacing: 12) {
+            GameCoverPlaceholder(
+                title: game.title,
+                size: CGSize(width: 42, height: 56),
+                cornerRadius: 8
+            )
 
-            Text(game.platformSummary)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(game.title)
+                    .font(.headline)
+                    .lineLimit(2)
 
-            HStack(spacing: 6) {
-                GamePill(text: game.platformSummary)
-                GamePill(text: game.copyCount == 1 ? "1 copia" : "\(game.copyCount) copias")
+                Text(game.platformSummary)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Text(game.detailSummary)
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
 #endif
     }
 }
@@ -284,12 +323,12 @@ struct GameEmptyStateView: View {
 
     var body: some View {
         ContentUnavailableView(
-            isDefaultState ? "Tu coleccion de videojuegos" : "No hay resultados",
+            isDefaultState ? "Tu colección de videojuegos" : "No hay resultados",
             systemImage: isDefaultState ? "rectangle.stack.fill.badge.plus" : "magnifyingglass",
             description: Text(
                 isDefaultState
-                    ? "Empieza anadiendo tu primer juego y ve construyendo tu inventario."
-                    : "Prueba con otra busqueda o cambia el filtro de plataforma."
+                    ? "Empieza añadiendo tu primer juego y ve construyendo tu inventario."
+                    : "Prueba con otra búsqueda o cambia el filtro de plataforma."
             )
         )
     }
@@ -300,7 +339,7 @@ struct GameSelectionPlaceholderView: View {
         ContentUnavailableView(
             "Selecciona un juego",
             systemImage: "rectangle.stack.person.crop",
-            description: Text("Elige un titulo de la tabla para ver su ficha y sus detalles.")
+            description: Text("Elige un título de la lista para ver su ficha y sus detalles.")
         )
     }
 }
@@ -318,7 +357,7 @@ struct DetailCard<Content: View>: View {
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(Color.primary.opacity(0.045))
         )
     }

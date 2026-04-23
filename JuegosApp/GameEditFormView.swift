@@ -37,6 +37,26 @@ struct GameEditFormView: View {
         return Int(trimmed)
     }
 
+    private var releaseYearValidationMessage: String? {
+        let trimmed = releaseYearText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        guard let year = Int(trimmed) else {
+            return "Introduce un año con números."
+        }
+
+        let maximumYear = Calendar.current.component(.year, from: .now) + 5
+        guard (1950...maximumYear).contains(year) else {
+            return "Introduce un año entre 1950 y \(maximumYear)."
+        }
+
+        return nil
+    }
+
+    private var canSave: Bool {
+        !cleanedTitle.isEmpty && releaseYearValidationMessage == nil
+    }
+
     var body: some View {
 #if os(macOS)
         macForm
@@ -52,7 +72,7 @@ struct GameEditFormView: View {
                 Text("Editar juego")
                     .font(.title3.weight(.semibold))
 
-                Text("Actualiza la informacion general del titulo.")
+                Text("Actualiza la información general del título.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -65,17 +85,25 @@ struct GameEditFormView: View {
 
             VStack(alignment: .leading, spacing: 20) {
                 GameEditSheetSection(title: "Juego", help: "Estos datos se aplican a todas las copias del juego.") {
-                    GameEditSheetRow(label: "Titulo") {
+                    GameEditSheetRow(label: "Título") {
                         TextField("The Legend of Zelda", text: $title)
                             .focused($focusedField, equals: .title)
                             .textFieldStyle(.roundedBorder)
                             .frame(maxWidth: 320, alignment: .leading)
                     }
 
-                    GameEditSheetRow(label: "Ano") {
-                        TextField("2024", text: $releaseYearText)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 100, alignment: .leading)
+                    GameEditSheetRow(label: "Año") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            TextField("2024", text: $releaseYearText)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 100, alignment: .leading)
+
+                            if let releaseYearValidationMessage {
+                                Text(releaseYearValidationMessage)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                            }
+                        }
                     }
                 }
             }
@@ -96,7 +124,7 @@ struct GameEditFormView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(cleanedTitle.isEmpty)
+                .disabled(!canSave)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
@@ -111,10 +139,17 @@ struct GameEditFormView: View {
         NavigationStack {
             Form {
                 Section("Juego") {
-                    TextField("Titulo", text: $title)
+                    TextField("Título", text: $title)
+                        .textInputAutocapitalization(.words)
 
-                    TextField("Ano de lanzamiento", text: $releaseYearText)
+                    TextField("Año de lanzamiento", text: $releaseYearText)
                         .keyboardType(.numberPad)
+
+                    if let releaseYearValidationMessage {
+                        Text(releaseYearValidationMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
                 }
             }
             .navigationTitle("Editar juego")
@@ -129,7 +164,7 @@ struct GameEditFormView: View {
                     Button("Guardar") {
                         saveGame()
                     }
-                    .disabled(cleanedTitle.isEmpty)
+                    .disabled(!canSave)
                 }
             }
         }

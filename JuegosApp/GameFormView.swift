@@ -33,6 +33,26 @@ struct GameFormView: View {
         return Int(trimmed)
     }
 
+    private var releaseYearValidationMessage: String? {
+        let trimmed = releaseYearText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        guard let year = Int(trimmed) else {
+            return "Introduce un año con números."
+        }
+
+        let maximumYear = Calendar.current.component(.year, from: .now) + 5
+        guard (1950...maximumYear).contains(year) else {
+            return "Introduce un año entre 1950 y \(maximumYear)."
+        }
+
+        return nil
+    }
+
+    private var canSave: Bool {
+        !cleanedTitle.isEmpty && releaseYearValidationMessage == nil
+    }
+
     private var cleanedCopyNotes: String {
         copyNotes.trimmingCharacters(in: .whitespacesAndNewlines)
     }
@@ -58,7 +78,7 @@ struct GameFormView: View {
                 Text("Nuevo juego")
                     .font(.title3.weight(.semibold))
 
-                Text("Crea la ficha del titulo y registra su primera copia.")
+                Text("Crea la ficha del título y registra su primera copia.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -71,18 +91,26 @@ struct GameFormView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    MacSheetSection(title: "Juego", help: "Informacion general del titulo que compartirán todas sus copias.") {
-                        MacSheetRow(label: "Titulo") {
+                    MacSheetSection(title: "Juego", help: "Información general del título que compartirán todas sus copias.") {
+                        MacSheetRow(label: "Título") {
                             TextField("The Legend of Zelda", text: $title)
                                 .focused($focusedField, equals: .title)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(maxWidth: 320, alignment: .leading)
                         }
 
-                        MacSheetRow(label: "Ano") {
-                            TextField("2024", text: $releaseYearText)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 100, alignment: .leading)
+                        MacSheetRow(label: "Año") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                TextField("2024", text: $releaseYearText)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 100, alignment: .leading)
+
+                                if let releaseYearValidationMessage {
+                                    Text(releaseYearValidationMessage)
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                }
+                            }
                         }
                     }
 
@@ -144,7 +172,7 @@ struct GameFormView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(cleanedTitle.isEmpty)
+                .disabled(!canSave)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
@@ -159,10 +187,17 @@ struct GameFormView: View {
         NavigationStack {
             Form {
                 Section("Juego") {
-                    TextField("Titulo", text: $title)
+                    TextField("Título", text: $title)
+                        .textInputAutocapitalization(.words)
 
-                    TextField("Ano de lanzamiento", text: $releaseYearText)
+                    TextField("Año de lanzamiento", text: $releaseYearText)
                         .keyboardType(.numberPad)
+
+                    if let releaseYearValidationMessage {
+                        Text(releaseYearValidationMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
                 }
 
                 Section("Primera copia") {
@@ -180,7 +215,7 @@ struct GameFormView: View {
                 }
 
                 Section("Notas de la copia") {
-                    TextField("Edicion, estado de la caja, procedencia...", text: $copyNotes, axis: .vertical)
+                    TextField("Edición, estado de la caja, procedencia...", text: $copyNotes, axis: .vertical)
                         .lineLimit(4, reservesSpace: true)
                 }
             }
@@ -196,7 +231,7 @@ struct GameFormView: View {
                     Button("Guardar") {
                         saveGame()
                     }
-                    .disabled(cleanedTitle.isEmpty)
+                    .disabled(!canSave)
                 }
             }
         }

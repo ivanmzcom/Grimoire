@@ -155,7 +155,7 @@ struct GameCopyEditFormView: View {
                 }
 
                 Section("Notas de la copia") {
-                    TextField("Edicion, estado de la caja, procedencia...", text: $notes, axis: .vertical)
+                    TextField("Edición, estado de la caja, procedencia...", text: $notes, axis: .vertical)
                         .lineLimit(4, reservesSpace: true)
                 }
             }
@@ -237,8 +237,8 @@ private struct EditCopySheetRow<Content: View>: View {
     let game = Game(title: "Metaphor: ReFantazio", releaseYear: 2024)
     let copy = GameCopy(
         platform: "PlayStation 5",
-        format: "Fisico",
-        notes: "Edicion estándar con caja en buen estado."
+        format: "Físico",
+        notes: "Edición estándar con caja en buen estado."
     )
 
     game.copies.append(copy)

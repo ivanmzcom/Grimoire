@@ -139,7 +139,7 @@ struct GameCopyFormView: View {
                 }
 
                 Section("Notas de la copia") {
-                    TextField("Edicion, estado de la caja, procedencia...", text: $notes, axis: .vertical)
+                    TextField("Edición, estado de la caja, procedencia...", text: $notes, axis: .vertical)
                         .lineLimit(4, reservesSpace: true)
                 }
             }
