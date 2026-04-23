@@ -6,18 +6,14 @@
 //
 
 import SwiftUI
+import SwiftData
 
 struct GameDetailView: View {
     let game: Game
+    var onAddCopy: (() -> Void)? = nil
 
-    private var metadataLine: String {
-        [
-            game.platform,
-            game.format,
-            game.status,
-            game.genre
-        ]
-        .joined(separator: " · ")
+    private var copyCountLabel: String {
+        game.copyCount == 1 ? "1 copia" : "\(game.copyCount) copias"
     }
 
     var body: some View {
@@ -36,11 +32,15 @@ struct GameDetailView: View {
                             .font(.largeTitle.weight(.semibold))
                             .textSelection(.enabled)
 
-                        Text(metadataLine)
+                        Text(game.detailSummary)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
-                        Text("Anadido el \(game.createdAt.formatted(date: .abbreviated, time: .omitted))")
+                        Text(game.platformSummary)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+
+                        Text("Añadido el \(game.createdAt.formatted(date: .abbreviated, time: .omitted))")
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                     }
@@ -54,20 +54,7 @@ struct GameDetailView: View {
 
                 Divider()
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Notas")
-                        .font(.headline)
-
-                    if game.notes.isEmpty {
-                        Text("Sin notas todavia.")
-                            .foregroundStyle(.tertiary)
-                    } else {
-                        Text(game.notes)
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .textSelection(.enabled)
-                    }
-                }
+                GameCopiesSection(game: game, onAddCopy: onAddCopy)
             }
             .padding(32)
             .frame(maxWidth: 760, alignment: .leading)
@@ -80,34 +67,25 @@ struct GameDetailView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(game.title)
                         .font(.system(size: 34, weight: .bold, design: .rounded))
-                    Label(game.platform, systemImage: "gamecontroller.fill")
+
+                    Text(game.detailSummary)
                         .font(.title3)
+                        .foregroundStyle(.secondary)
+
+                    Text(game.platformSummary)
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
 
-                HStack(spacing: 10) {
-                    DetailBadge(text: game.format)
-                    DetailBadge(text: game.status)
-                    DetailBadge(text: game.genre)
-                }
-
                 DetailCard(title: "Ficha") {
-                    DetailRow(label: "Formato", value: game.format)
-                    DetailRow(label: "Estado", value: game.status)
                     DetailRow(label: "Genero", value: game.genre)
                     DetailRow(label: "Ano", value: game.releaseYear.map(String.init) ?? "Sin indicar")
-                    DetailRow(
-                        label: "Anadido",
-                        value: game.createdAt.formatted(date: .abbreviated, time: .omitted)
-                    )
+                    DetailRow(label: "Plataformas", value: game.platformSummary)
+                    DetailRow(label: "Copias", value: copyCountLabel)
                 }
 
-                if !game.notes.isEmpty {
-                    DetailCard(title: "Notas") {
-                        Text(game.notes)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .foregroundStyle(.primary)
-                    }
+                DetailCard(title: "Copias") {
+                    GameCopiesSection(game: game, onAddCopy: onAddCopy, showsTitle: false)
                 }
             }
             .padding(28)
@@ -126,27 +104,6 @@ private struct GameMetadataGrid: View {
     var body: some View {
         Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 12) {
             GridRow {
-                Text("Plataforma")
-                    .foregroundStyle(.secondary)
-                Text(game.platform)
-                    .textSelection(.enabled)
-            }
-
-            GridRow {
-                Text("Formato")
-                    .foregroundStyle(.secondary)
-                Text(game.format)
-                    .textSelection(.enabled)
-            }
-
-            GridRow {
-                Text("Estado")
-                    .foregroundStyle(.secondary)
-                Text(game.status)
-                    .textSelection(.enabled)
-            }
-
-            GridRow {
                 Text("Genero")
                     .foregroundStyle(.secondary)
                 Text(game.genre)
@@ -159,10 +116,108 @@ private struct GameMetadataGrid: View {
                 Text(game.releaseYear.map(String.init) ?? "Sin indicar")
                     .textSelection(.enabled)
             }
+
+            GridRow {
+                Text("Plataformas")
+                    .foregroundStyle(.secondary)
+                Text(game.platformSummary)
+                    .textSelection(.enabled)
+            }
+
+            GridRow {
+                Text("Copias")
+                    .foregroundStyle(.secondary)
+                Text(game.copyCount == 1 ? "1 copia registrada" : "\(game.copyCount) copias registradas")
+                    .textSelection(.enabled)
+            }
         }
     }
 }
 #endif
+
+private struct GameCopiesSection: View {
+    let game: Game
+    var onAddCopy: (() -> Void)?
+    var showsTitle = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if showsTitle || onAddCopy != nil {
+                HStack {
+                    if showsTitle {
+                        Text("Copias")
+                            .font(.headline)
+                    }
+
+                    Spacer()
+
+                    if let onAddCopy {
+                        Button("Añadir copia", action: onAddCopy)
+                            .buttonStyle(.link)
+                    }
+                }
+            }
+
+            if game.sortedCopies.isEmpty {
+                Text("Todavia no hay copias registradas para este juego.")
+                    .foregroundStyle(.tertiary)
+            } else {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(game.sortedCopies.enumerated()), id: \.element.persistentModelID) { index, copy in
+                        if index > 0 {
+                            Divider()
+                        }
+
+                        GameCopyRow(copy: copy)
+                            .padding(.vertical, 12)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct GameCopyRow: View {
+    let copy: GameCopy
+
+    private var subtitle: String {
+        [
+            copy.format,
+            copy.createdAt.formatted(date: .abbreviated, time: .omitted)
+        ]
+        .filter { !$0.isEmpty }
+        .joined(separator: " · ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(copy.platform)
+                    .font(.body.weight(.semibold))
+
+                Spacer(minLength: 8)
+
+                Text(copy.status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !subtitle.isEmpty {
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !copy.notes.isEmpty {
+                Text(copy.notes)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
 
 private struct DetailRow: View {
     let label: String
@@ -180,15 +235,26 @@ private struct DetailRow: View {
 }
 
 #Preview {
-    GameDetailView(
-        game: Game(
-            title: "The Legend of Zelda: Tears of the Kingdom",
+    let game = Game(
+        title: "The Legend of Zelda: Tears of the Kingdom",
+        genre: "Aventura",
+        releaseYear: 2023
+    )
+    game.copies.append(
+        GameCopy(
             platform: "Nintendo Switch",
             format: "Fisico",
             status: "Jugando",
-            genre: "Aventura",
-            releaseYear: 2023,
-            notes: "Edicion estandar"
+            notes: "Edicion estandar con funda en buen estado."
         )
     )
+    game.copies.append(
+        GameCopy(
+            platform: "Nintendo Switch",
+            format: "Digital",
+            status: "Archivado"
+        )
+    )
+
+    return GameDetailView(game: game)
 }

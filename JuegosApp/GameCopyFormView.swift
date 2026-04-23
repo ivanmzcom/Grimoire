@@ -1,5 +1,5 @@
 //
-//  GameFormView.swift
+//  GameCopyFormView.swift
 //  JuegosApp
 //
 //  Created by Codex on 23/4/26.
@@ -8,41 +8,25 @@
 import SwiftUI
 import SwiftData
 
-struct GameFormView: View {
-    private enum Field {
-        case title
-    }
-
+struct GameCopyFormView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
 
-    @State private var title = ""
-    @State private var genre = GameCatalog.genres[0]
-    @State private var releaseYearText = ""
+    let game: Game
+
     @State private var platform = GameCatalog.platforms[0]
     @State private var format = GameCatalog.formats[0]
     @State private var status = GameCatalog.statuses[0]
-    @State private var copyNotes = ""
-    @FocusState private var focusedField: Field?
+    @State private var notes = ""
 
-    private var cleanedTitle: String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var releaseYear: Int? {
-        let trimmed = releaseYearText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        return Int(trimmed)
-    }
-
-    private var cleanedCopyNotes: String {
-        copyNotes.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var cleanedNotes: String {
+        notes.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private var notesPreview: String {
-        cleanedCopyNotes.isEmpty
-            ? "Añade estado, edición, procedencia o cualquier detalle útil de esta copia."
-            : cleanedCopyNotes
+        cleanedNotes.isEmpty
+            ? "Añade detalles de esta unidad si quieres distinguirla del resto."
+            : cleanedNotes
     }
 
     var body: some View {
@@ -57,10 +41,10 @@ struct GameFormView: View {
     private var macForm: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Nuevo juego")
+                Text("Nueva copia")
                     .font(.title3.weight(.semibold))
 
-                Text("Crea la ficha del titulo y registra su primera copia.")
+                Text(game.title)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -73,33 +57,8 @@ struct GameFormView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    MacSheetSection(title: "Juego", help: "Informacion general del titulo que compartirán todas sus copias.") {
-                        MacSheetRow(label: "Titulo") {
-                            TextField("The Legend of Zelda", text: $title)
-                                .focused($focusedField, equals: .title)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(maxWidth: 320, alignment: .leading)
-                        }
-
-                        MacSheetRow(label: "Genero") {
-                            Picker("", selection: $genre) {
-                                ForEach(GameCatalog.genres, id: \.self) { option in
-                                    Text(option).tag(option)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 180, alignment: .leading)
-                        }
-
-                        MacSheetRow(label: "Ano") {
-                            TextField("2024", text: $releaseYearText)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(width: 100, alignment: .leading)
-                        }
-                    }
-
-                    MacSheetSection(title: "Primera copia", help: "Datos de la unidad concreta que tienes en tu biblioteca.") {
-                        MacSheetRow(label: "Plataforma") {
+                    CopySheetSection(title: "Copia", help: "Registra la nueva unidad asociada a este juego.") {
+                        CopySheetRow(label: "Plataforma") {
                             Picker("", selection: $platform) {
                                 ForEach(GameCatalog.platforms, id: \.self) { option in
                                     Text(option).tag(option)
@@ -109,7 +68,7 @@ struct GameFormView: View {
                             .frame(width: 220, alignment: .leading)
                         }
 
-                        MacSheetRow(label: "Formato") {
+                        CopySheetRow(label: "Formato") {
                             Picker("", selection: $format) {
                                 ForEach(GameCatalog.formats, id: \.self) { option in
                                     Text(option).tag(option)
@@ -119,7 +78,7 @@ struct GameFormView: View {
                             .frame(width: 180, alignment: .leading)
                         }
 
-                        MacSheetRow(label: "Estado") {
+                        CopySheetRow(label: "Estado") {
                             Picker("", selection: $status) {
                                 ForEach(GameCatalog.statuses, id: \.self) { option in
                                     Text(option).tag(option)
@@ -130,8 +89,8 @@ struct GameFormView: View {
                         }
                     }
 
-                    MacSheetSection(title: "Notas de la copia", help: "Observaciones opcionales sobre caja, disco, procedencia o edición.") {
-                        TextEditor(text: $copyNotes)
+                    CopySheetSection(title: "Notas de la copia", help: "Datos opcionales para distinguir esta unidad.") {
+                        TextEditor(text: $notes)
                             .font(.body)
                             .scrollContentBackground(.hidden)
                             .padding(8)
@@ -145,7 +104,7 @@ struct GameFormView: View {
 
                         Text(notesPreview)
                             .font(.caption)
-                            .foregroundStyle(cleanedCopyNotes.isEmpty ? .tertiary : .secondary)
+                            .foregroundStyle(cleanedNotes.isEmpty ? .tertiary : .secondary)
                             .lineLimit(2)
                     }
                 }
@@ -162,38 +121,21 @@ struct GameFormView: View {
                 }
 
                 Button("Guardar") {
-                    saveGame()
+                    saveCopy()
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(cleanedTitle.isEmpty)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
         }
-        .frame(minWidth: 560, idealWidth: 620, minHeight: 520, idealHeight: 580)
-        .task {
-            focusedField = .title
-        }
+        .frame(minWidth: 520, idealWidth: 580, minHeight: 430, idealHeight: 500)
     }
 #else
     private var iosForm: some View {
         NavigationStack {
             Form {
-                Section("Juego") {
-                    TextField("Titulo", text: $title)
-
-                    Picker("Genero", selection: $genre) {
-                        ForEach(GameCatalog.genres, id: \.self) { option in
-                            Text(option).tag(option)
-                        }
-                    }
-
-                    TextField("Ano de lanzamiento", text: $releaseYearText)
-                        .keyboardType(.numberPad)
-                }
-
-                Section("Primera copia") {
+                Section("Copia") {
                     Picker("Plataforma", selection: $platform) {
                         ForEach(GameCatalog.platforms, id: \.self) { option in
                             Text(option).tag(option)
@@ -214,11 +156,11 @@ struct GameFormView: View {
                 }
 
                 Section("Notas de la copia") {
-                    TextField("Edicion, estado de la caja, procedencia...", text: $copyNotes, axis: .vertical)
+                    TextField("Edicion, estado de la caja, procedencia...", text: $notes, axis: .vertical)
                         .lineLimit(4, reservesSpace: true)
                 }
             }
-            .navigationTitle("Nuevo juego")
+            .navigationTitle("Nueva copia")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancelar") {
@@ -228,43 +170,30 @@ struct GameFormView: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Guardar") {
-                        saveGame()
+                        saveCopy()
                     }
-                    .disabled(cleanedTitle.isEmpty)
                 }
             }
         }
     }
 #endif
 
-    private func saveGame() {
-        let game = Game(
-            title: cleanedTitle,
-            genre: genre,
-            releaseYear: releaseYear
-        )
-        let firstCopy = GameCopy(
+    private func saveCopy() {
+        let copy = GameCopy(
             platform: platform,
             format: format,
             status: status,
-            notes: cleanedCopyNotes
+            notes: cleanedNotes
         )
 
-        game.copies.append(firstCopy)
-
-        modelContext.insert(game)
-        modelContext.insert(firstCopy)
+        game.copies.append(copy)
+        modelContext.insert(copy)
         dismiss()
     }
 }
 
-#Preview {
-    GameFormView()
-        .modelContainer(for: [Game.self, GameCopy.self], inMemory: true)
-}
-
 #if os(macOS)
-private struct MacSheetSection<Content: View>: View {
+private struct CopySheetSection<Content: View>: View {
     let title: String
     let help: String
     @ViewBuilder let content: Content
@@ -286,7 +215,7 @@ private struct MacSheetSection<Content: View>: View {
     }
 }
 
-private struct MacSheetRow<Content: View>: View {
+private struct CopySheetRow<Content: View>: View {
     let label: String
     @ViewBuilder let content: Content
 
@@ -302,3 +231,10 @@ private struct MacSheetRow<Content: View>: View {
     }
 }
 #endif
+
+#Preview {
+    let game = Game(title: "Metaphor: ReFantazio", genre: "RPG", releaseYear: 2024)
+
+    return GameCopyFormView(game: game)
+        .modelContainer(for: [Game.self, GameCopy.self], inMemory: true)
+}

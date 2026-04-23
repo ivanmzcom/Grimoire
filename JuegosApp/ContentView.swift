@@ -14,13 +14,14 @@ extension Notification.Name {
 
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
-    @Query(sort: [SortDescriptor(\Game.title), SortDescriptor(\Game.platform)]) private var games: [Game]
+    @Query(sort: [SortDescriptor(\Game.title)]) private var games: [Game]
 
     @SceneStorage("librarySearchText") private var searchText = ""
     @SceneStorage("selectedPlatformFilter") private var selectedPlatform = "Todas"
     @State private var selectedGame: Game?
     @State private var navigationPath = [PersistentIdentifier]()
     @State private var showingAddSheet = false
+    @State private var copyHostGame: Game?
 
     private var platformOptions: [String] {
         ["Todas"] + GameCatalog.platforms
@@ -28,11 +29,12 @@ struct ContentView: View {
 
     private var filteredGames: [Game] {
         games.filter { game in
-            let matchesPlatform = selectedPlatform == "Todas" || game.platform == selectedPlatform
+            let matchesPlatform = selectedPlatform == "Todas"
+                || game.sortedCopies.contains(where: { $0.platform == selectedPlatform })
             let matchesSearch = searchText.isEmpty
                 || game.title.localizedCaseInsensitiveContains(searchText)
-                || game.platform.localizedCaseInsensitiveContains(searchText)
                 || game.genre.localizedCaseInsensitiveContains(searchText)
+                || game.searchableCopyText.localizedCaseInsensitiveContains(searchText)
             return matchesPlatform && matchesSearch
         }
     }
@@ -49,7 +51,8 @@ struct ContentView: View {
                 selectedGame: $selectedGame,
                 showingAddSheet: $showingAddSheet,
                 platformOptions: platformOptions,
-                onDeleteSelected: deleteSelectedGame
+                onDeleteSelected: deleteSelectedGame,
+                onAddCopy: openCopySheet
             )
 #else
             IOSLibraryView(
@@ -60,12 +63,16 @@ struct ContentView: View {
                 navigationPath: $navigationPath,
                 showingAddSheet: $showingAddSheet,
                 platformOptions: platformOptions,
-                onDelete: deleteGames
+                onDelete: deleteGames,
+                onAddCopy: openCopySheet
             )
 #endif
         }
         .sheet(isPresented: $showingAddSheet) {
             GameFormView()
+        }
+        .sheet(item: $copyHostGame) { game in
+            GameCopyFormView(game: game)
         }
         .onAppear {
             syncSelection()
@@ -100,6 +107,10 @@ struct ContentView: View {
         }
     }
 
+    private func openCopySheet(for game: Game) {
+        copyHostGame = game
+    }
+
     private func syncSelection() {
 #if os(macOS)
         if let selectedGame,
@@ -131,13 +142,16 @@ private struct MacLibraryView: View {
     @Binding var showingAddSheet: Bool
     let platformOptions: [String]
     let onDeleteSelected: () -> Void
+    let onAddCopy: (Game) -> Void
 
     private var availablePlatforms: [String] {
         Array(platformOptions.dropFirst())
     }
 
     private func count(for platform: String) -> Int {
-        allGames.count { $0.platform == platform }
+        allGames.count { game in
+            game.sortedCopies.contains { $0.platform == platform }
+        }
     }
 
     private var selectedGameID: Binding<PersistentIdentifier?> {
@@ -196,13 +210,15 @@ private struct MacLibraryView: View {
             .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 380)
         } detail: {
             if let selectedGame {
-                GameDetailView(game: selectedGame)
+                GameDetailView(game: selectedGame) {
+                    onAddCopy(selectedGame)
+                }
             } else {
                 GameSelectionPlaceholderView()
             }
         }
         .navigationSplitViewStyle(.balanced)
-        .searchable(text: $searchText, prompt: "Buscar por titulo, plataforma o genero")
+        .searchable(text: $searchText, prompt: "Buscar por titulo, plataforma, estado o genero")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -210,6 +226,17 @@ private struct MacLibraryView: View {
                 } label: {
                     Label("Nuevo juego", systemImage: "plus")
                 }
+            }
+
+            ToolbarItem {
+                Button {
+                    if let selectedGame {
+                        onAddCopy(selectedGame)
+                    }
+                } label: {
+                    Label("Añadir copia", systemImage: "square.stack.badge.plus")
+                }
+                .disabled(selectedGame == nil)
             }
 
             ToolbarItem {
@@ -231,6 +258,7 @@ private struct IOSLibraryView: View {
     @Binding var showingAddSheet: Bool
     let platformOptions: [String]
     let onDelete: (IndexSet) -> Void
+    let onAddCopy: (Game) -> Void
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -267,7 +295,7 @@ private struct IOSLibraryView: View {
             }
             .navigationTitle("Juegos")
             .navigationBarTitleDisplayMode(.large)
-            .searchable(text: $searchText, prompt: "Buscar por titulo, plataforma o genero")
+            .searchable(text: $searchText, prompt: "Buscar por titulo, plataforma, estado o genero")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -279,7 +307,9 @@ private struct IOSLibraryView: View {
             }
             .navigationDestination(for: PersistentIdentifier.self) { identifier in
                 if let game = games.first(where: { $0.persistentModelID == identifier }) {
-                    GameDetailView(game: game)
+                    GameDetailView(game: game) {
+                        onAddCopy(game)
+                    }
                         .navigationBarTitleDisplayMode(.inline)
                 } else {
                     GameEmptyStateView(searchText: searchText, selectedPlatform: selectedPlatform)
@@ -292,5 +322,5 @@ private struct IOSLibraryView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: Game.self, inMemory: true)
+        .modelContainer(for: [Game.self, GameCopy.self], inMemory: true)
 }

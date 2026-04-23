@@ -13,6 +13,7 @@ struct JuegosAppApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Game.self,
+            GameCopy.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

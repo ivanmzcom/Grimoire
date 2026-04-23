@@ -147,14 +147,6 @@ struct GameCoverPlaceholder: View {
 struct MacGameListRow: View {
     let game: Game
 
-    private var secondaryLine: String {
-        "\(game.platform) · \(game.format)"
-    }
-
-    private var tertiaryLine: String {
-        game.notes.isEmpty ? game.genre : game.notes
-    }
-
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             GameCoverPlaceholder(title: game.title)
@@ -169,20 +161,20 @@ struct MacGameListRow: View {
 
                     Spacer(minLength: 8)
 
-                    Text(game.status)
+                    Text(game.copyCount == 1 ? "1 copia" : "\(game.copyCount) copias")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .fixedSize()
                 }
 
-                Text(secondaryLine)
+                Text(game.librarySubtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
-                Text(tertiaryLine)
+                Text(game.libraryFootnote)
                     .font(.caption)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
@@ -230,16 +222,15 @@ struct GameRowContent: View {
                 .font(.body.weight(.medium))
                 .lineLimit(1)
 
-            HStack(spacing: 6) {
-                Text(game.platform)
-                Text("•")
-                Text(game.format)
-                Text("•")
-                Text(game.status)
-            }
+            Text(game.librarySubtitle)
             .font(.caption)
             .foregroundStyle(.secondary)
             .lineLimit(1)
+
+            Text(game.libraryFootnote)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
         }
         .padding(.vertical, 3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -250,13 +241,13 @@ struct GameRowContent: View {
                 .font(.headline)
                 .lineLimit(2)
 
-            Text(game.platform)
+            Text(game.platformSummary)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
 
             HStack(spacing: 6) {
-                GamePill(text: game.format)
-                GamePill(text: game.status)
+                GamePill(text: game.platformSummary)
+                GamePill(text: game.copyCount == 1 ? "1 copia" : "\(game.copyCount) copias")
             }
         }
         .padding(.vertical, 6)
