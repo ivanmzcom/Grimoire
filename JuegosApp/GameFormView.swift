@@ -21,6 +21,7 @@ struct GameFormView: View {
     @State private var platform = GameCatalog.platforms[0]
     @State private var format = GameCatalog.formats[0]
     @State private var copyNotes = ""
+    @State private var saveErrorMessage: String?
     @FocusState private var focusedField: Field?
 
     private var cleanedTitle: String {
@@ -160,6 +161,15 @@ struct GameFormView: View {
 
             Divider()
 
+            if let saveErrorMessage {
+                Text(saveErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+            }
+
             HStack {
                 Spacer()
 
@@ -218,6 +228,14 @@ struct GameFormView: View {
                     TextField("Edición, estado de la caja, procedencia...", text: $copyNotes, axis: .vertical)
                         .lineLimit(4, reservesSpace: true)
                 }
+
+                if let saveErrorMessage {
+                    Section {
+                        Text(saveErrorMessage)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
             }
             .navigationTitle("Nuevo juego")
             .toolbar {
@@ -249,11 +267,17 @@ struct GameFormView: View {
             notes: cleanedCopyNotes
         )
 
-        game.copies.append(firstCopy)
+        game.addCopy(firstCopy)
 
         modelContext.insert(game)
         modelContext.insert(firstCopy)
-        dismiss()
+
+        do {
+            try modelContext.save()
+            dismiss()
+        } catch {
+            saveErrorMessage = "No se pudo guardar el juego. Inténtalo de nuevo."
+        }
     }
 }
 

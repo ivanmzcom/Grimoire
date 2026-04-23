@@ -18,7 +18,11 @@ struct JuegosAppApp: App {
             GameCopy.self,
             GamePlaythrough.self,
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        let modelConfiguration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: .private(AppCloudKitConfiguration.containerIdentifier)
+        )
 
         do {
             return try ModelContainer(for: schema, configurations: [modelConfiguration])
@@ -28,6 +32,16 @@ struct JuegosAppApp: App {
     }()
 
     var body: some Scene {
+        mainWindow
+
+#if os(macOS)
+        Settings {
+            JuegosSettingsView()
+        }
+#endif
+    }
+
+    private var mainWindow: some Scene {
         WindowGroup {
             ContentView()
         }

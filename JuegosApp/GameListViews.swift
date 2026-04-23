@@ -177,6 +177,7 @@ struct GameListDetailView: View {
     var onAddCopy: ((Game) -> Void)? = nil
     var onAddPlaythrough: ((GameCopy) -> Void)? = nil
     var onEditGame: ((Game) -> Void)? = nil
+    var onImportMetadata: ((Game) -> Void)? = nil
     var onEditCopy: ((GameCopy) -> Void)? = nil
     var onEditPlaythrough: ((GamePlaythrough) -> Void)? = nil
 
@@ -192,6 +193,7 @@ struct GameListDetailView: View {
                 onAddCopy: onAddCopy,
                 onAddPlaythrough: onAddPlaythrough,
                 onEditGame: onEditGame,
+                onImportMetadata: onImportMetadata,
                 onEditCopy: onEditCopy,
                 onEditPlaythrough: onEditPlaythrough
             )
@@ -213,6 +215,9 @@ struct GameListDetailView: View {
                     game: game,
                     onAddCopy: {
                         onAddCopy?(game)
+                    },
+                    onImportMetadata: {
+                        onImportMetadata?(game)
                     },
                     onAddPlaythrough: onAddPlaythrough,
                     onEditGame: {
@@ -238,6 +243,7 @@ struct GameListDetailView: View {
                     onAddCopy: onAddCopy,
                     onAddPlaythrough: onAddPlaythrough,
                     onEditGame: onEditGame,
+                    onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough
                 )
@@ -270,6 +276,7 @@ struct GameListDetailContentView: View {
     var onAddCopy: ((Game) -> Void)? = nil
     var onAddPlaythrough: ((GameCopy) -> Void)? = nil
     var onEditGame: ((Game) -> Void)? = nil
+    var onImportMetadata: ((Game) -> Void)? = nil
     var onEditCopy: ((GameCopy) -> Void)? = nil
     var onEditPlaythrough: ((GamePlaythrough) -> Void)? = nil
 
@@ -489,7 +496,7 @@ struct GameListDetailContentView: View {
 
     private func add(_ game: Game) {
         let entry = GameListEntry(game: game, sortIndex: list.nextSortIndex)
-        list.entries.append(entry)
+        list.addEntry(entry)
         modelContext.insert(entry)
     }
 
@@ -559,8 +566,9 @@ private struct GameListGridCard: View {
         VStack(spacing: 9) {
             ZStack(alignment: .topTrailing) {
                 ZStack(alignment: .topLeading) {
-                    GameCoverPlaceholder(
+                    GameCoverArtwork(
                         title: game.title,
+                        coverURL: game.coverURL,
                         size: CGSize(width: 104, height: 148),
                         cornerRadius: 14
                     )
@@ -690,8 +698,8 @@ struct GameListSelectionPlaceholderView: View {
     let game = Game(title: "The Legend of Zelda: Tears of the Kingdom", releaseYear: 2023)
     let anotherGame = Game(title: "Metroid Prime Remastered", releaseYear: 2023)
     let list = GameList(title: "Pendientes")
-    list.entries.append(GameListEntry(game: game, sortIndex: 0))
-    list.entries.append(GameListEntry(game: anotherGame, sortIndex: 1))
+    list.addEntry(GameListEntry(game: game, sortIndex: 0))
+    list.addEntry(GameListEntry(game: anotherGame, sortIndex: 1))
 
     return GameListDetailView(list: list, allGames: [game, anotherGame], allLists: [list])
         .modelContainer(for: [Game.self, GameList.self, GameListEntry.self, GameCopy.self, GamePlaythrough.self], inMemory: true)

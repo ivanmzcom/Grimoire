@@ -233,8 +233,8 @@ private struct PlaythroughEditSheetRow<Content: View>: View {
     let copy = GameCopy(platform: "Nintendo Switch", format: "Físico", notes: "Edición launch")
     let playthrough = GamePlaythrough(status: "Jugando", notes: "Ruta casual al 63%.")
 
-    game.copies.append(copy)
-    copy.playthroughs.append(playthrough)
+    game.addCopy(copy)
+    copy.addPlaythrough(playthrough)
 
     return GamePlaythroughEditFormView(playthrough: playthrough)
         .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self], inMemory: true)

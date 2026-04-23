@@ -34,6 +34,7 @@ struct ContentView: View {
     @State private var copyHostGame: Game?
     @State private var playthroughHostCopy: GameCopy?
     @State private var gameToEdit: Game?
+    @State private var metadataImportGame: Game?
     @State private var copyToEdit: GameCopy?
     @State private var playthroughToEdit: GamePlaythrough?
 
@@ -131,6 +132,7 @@ struct ContentView: View {
                 onAddCopy: openCopySheet,
                 onAddPlaythrough: openPlaythroughSheet,
                 onEditGame: openGameEditSheet,
+                onImportMetadata: openMetadataImporter,
                 onEditCopy: openCopyEditSheet,
                 onEditPlaythrough: openPlaythroughEditSheet
             )
@@ -153,6 +155,7 @@ struct ContentView: View {
                 onAddCopy: openCopySheet,
                 onAddPlaythrough: openPlaythroughSheet,
                 onEditGame: openGameEditSheet,
+                onImportMetadata: openMetadataImporter,
                 onEditCopy: openCopyEditSheet,
                 onEditPlaythrough: openPlaythroughEditSheet
             )
@@ -172,6 +175,9 @@ struct ContentView: View {
         }
         .sheet(item: $gameToEdit) { game in
             GameEditFormView(game: game)
+        }
+        .sheet(item: $metadataImportGame) { game in
+            IGDBMetadataImporterView(game: game)
         }
         .sheet(item: $copyToEdit) { copy in
             GameCopyEditFormView(copy: copy)
@@ -252,6 +258,10 @@ struct ContentView: View {
         gameToEdit = game
     }
 
+    private func openMetadataImporter(for game: Game) {
+        metadataImportGame = game
+    }
+
     private func openCopyEditSheet(for copy: GameCopy) {
         copyToEdit = copy
     }
@@ -269,7 +279,7 @@ struct ContentView: View {
                     status: copy.status,
                     createdAt: copy.createdAt
                 )
-                copy.playthroughs.append(playthrough)
+                copy.addPlaythrough(playthrough)
                 copy.status = ""
                 modelContext.insert(playthrough)
                 didInsertPlaythrough = true
@@ -372,6 +382,7 @@ private struct MacLibraryView: View {
     let onAddCopy: (Game) -> Void
     let onAddPlaythrough: (GameCopy) -> Void
     let onEditGame: (Game) -> Void
+    let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
 
@@ -477,6 +488,7 @@ private struct MacLibraryView: View {
                         onAddCopy: onAddCopy,
                         onAddPlaythrough: onAddPlaythrough,
                         onEditGame: onEditGame,
+                        onImportMetadata: onImportMetadata,
                         onEditCopy: onEditCopy,
                         onEditPlaythrough: onEditPlaythrough
                     )
@@ -489,6 +501,12 @@ private struct MacLibraryView: View {
                         game: selectedGame,
                         onAddCopy: {
                             onAddCopy(selectedGame)
+                        },
+                        onDeleteGame: {
+                            gamePendingDeletion = selectedGame
+                        },
+                        onImportMetadata: {
+                            onImportMetadata(selectedGame)
                         },
                         onAddPlaythrough: onAddPlaythrough,
                         onEditGame: {
@@ -524,37 +542,6 @@ private struct MacLibraryView: View {
                     }
                 } label: {
                     Label(isShowingLists ? "Nueva lista" : "Nuevo juego", systemImage: "plus")
-                }
-            }
-
-            if isShowingLists {
-                ToolbarItem {
-                    Button(role: .destructive) {
-                        listPendingDeletion = selectedGameList
-                    } label: {
-                        Label("Eliminar lista", systemImage: "trash")
-                    }
-                    .disabled(selectedGameList == nil)
-                }
-            } else {
-                ToolbarItem {
-                    Button {
-                        if let selectedGame {
-                            onAddCopy(selectedGame)
-                        }
-                    } label: {
-                        Label("Añadir copia", systemImage: "square.stack.badge.plus")
-                    }
-                    .disabled(selectedGame == nil)
-                }
-
-                ToolbarItem {
-                    Button(role: .destructive) {
-                        gamePendingDeletion = selectedGame
-                    } label: {
-                        Label("Eliminar", systemImage: "trash")
-                    }
-                    .disabled(selectedGame == nil)
                 }
             }
         }
@@ -598,6 +585,12 @@ private struct MacLibraryView: View {
                     onAddCopy: {
                         onAddCopy(game)
                     },
+                    onDeleteGame: {
+                        gamePendingDeletion = game
+                    },
+                    onImportMetadata: {
+                        onImportMetadata(game)
+                    },
                     onAddPlaythrough: onAddPlaythrough,
                     onEditGame: {
                         onEditGame(game)
@@ -622,6 +615,7 @@ private struct MacLibraryView: View {
                     onAddCopy: onAddCopy,
                     onAddPlaythrough: onAddPlaythrough,
                     onEditGame: onEditGame,
+                    onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough
                 )
@@ -670,6 +664,7 @@ private struct IOSLibraryView: View {
     let onAddCopy: (Game) -> Void
     let onAddPlaythrough: (GameCopy) -> Void
     let onEditGame: (Game) -> Void
+    let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
 
@@ -689,6 +684,7 @@ private struct IOSLibraryView: View {
                 onAddCopy: onAddCopy,
                 onAddPlaythrough: onAddPlaythrough,
                 onEditGame: onEditGame,
+                onImportMetadata: onImportMetadata,
                 onEditCopy: onEditCopy,
                 onEditPlaythrough: onEditPlaythrough
             )
@@ -707,6 +703,7 @@ private struct IOSLibraryView: View {
                 onAddCopy: onAddCopy,
                 onAddPlaythrough: onAddPlaythrough,
                 onEditGame: onEditGame,
+                onImportMetadata: onImportMetadata,
                 onEditCopy: onEditCopy,
                 onEditPlaythrough: onEditPlaythrough
             )
@@ -731,6 +728,7 @@ private struct IOSGamesLibraryTab: View {
     let onAddCopy: (Game) -> Void
     let onAddPlaythrough: (GameCopy) -> Void
     let onEditGame: (Game) -> Void
+    let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
 
@@ -756,7 +754,9 @@ private struct IOSGamesLibraryTab: View {
                     List {
                         Section {
                             ForEach(games) { game in
-                                NavigationLink(value: GameLibraryDetailRoute.game(game.persistentModelID)) {
+                                NavigationLink {
+                                    gameDestination(for: game)
+                                } label: {
                                     GameRowContent(game: game)
                                 }
                                 .swipeActions {
@@ -833,25 +833,35 @@ private struct IOSGamesLibraryTab: View {
         platform == LibrarySidebarItem.allGames ? "Todas las plataformas" : platform
     }
 
+    private func gameDestination(for game: Game) -> some View {
+        GameDetailView(
+            game: game,
+            onAddCopy: {
+                onAddCopy(game)
+            },
+            onDeleteGame: {
+                gamePendingDeletion = game
+            },
+            onImportMetadata: {
+                onImportMetadata(game)
+            },
+            onAddPlaythrough: onAddPlaythrough,
+            onEditGame: {
+                onEditGame(game)
+            },
+            onEditCopy: onEditCopy,
+            onEditPlaythrough: onEditPlaythrough,
+            onOpenList: open
+        )
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
     @ViewBuilder
     private func destination(for route: GameLibraryDetailRoute) -> some View {
         switch route {
         case .game(let gameID):
             if let game = allGames.first(where: { $0.persistentModelID == gameID }) {
-                GameDetailView(
-                    game: game,
-                    onAddCopy: {
-                        onAddCopy(game)
-                    },
-                    onAddPlaythrough: onAddPlaythrough,
-                    onEditGame: {
-                        onEditGame(game)
-                    },
-                    onEditCopy: onEditCopy,
-                    onEditPlaythrough: onEditPlaythrough,
-                    onOpenList: open
-                )
-                .navigationBarTitleDisplayMode(.inline)
+                gameDestination(for: game)
             } else {
                 GameEmptyStateView(searchText: searchText, selectedPlatform: selectedPlatform)
             }
@@ -864,6 +874,7 @@ private struct IOSGamesLibraryTab: View {
                     onAddCopy: onAddCopy,
                     onAddPlaythrough: onAddPlaythrough,
                     onEditGame: onEditGame,
+                    onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough
                 )
@@ -897,6 +908,7 @@ private struct IOSListsLibraryTab: View {
     let onAddCopy: (Game) -> Void
     let onAddPlaythrough: (GameCopy) -> Void
     let onEditGame: (Game) -> Void
+    let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
 
@@ -920,7 +932,9 @@ private struct IOSListsLibraryTab: View {
                     List {
                         Section {
                             ForEach(gameLists) { list in
-                                NavigationLink(value: GameLibraryDetailRoute.list(list.persistentModelID)) {
+                                NavigationLink {
+                                    listDestination(for: list)
+                                } label: {
                                     GameListRowContent(list: list)
                                 }
                                 .swipeActions {
@@ -975,20 +989,7 @@ private struct IOSListsLibraryTab: View {
         switch route {
         case .game(let gameID):
             if let game = allGames.first(where: { $0.persistentModelID == gameID }) {
-                GameDetailView(
-                    game: game,
-                    onAddCopy: {
-                        onAddCopy(game)
-                    },
-                    onAddPlaythrough: onAddPlaythrough,
-                    onEditGame: {
-                        onEditGame(game)
-                    },
-                    onEditCopy: onEditCopy,
-                    onEditPlaythrough: onEditPlaythrough,
-                    onOpenList: open
-                )
-                .navigationBarTitleDisplayMode(.inline)
+                gameDestination(for: game)
             } else {
                 ContentUnavailableView(
                     "Juego no disponible",
@@ -1008,6 +1009,7 @@ private struct IOSListsLibraryTab: View {
                     onAddCopy: onAddCopy,
                     onAddPlaythrough: onAddPlaythrough,
                     onEditGame: onEditGame,
+                    onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough
                 )
@@ -1019,6 +1021,43 @@ private struct IOSListsLibraryTab: View {
                 )
             }
         }
+    }
+
+    private func gameDestination(for game: Game) -> some View {
+        GameDetailView(
+            game: game,
+            onAddCopy: {
+                onAddCopy(game)
+            },
+            onImportMetadata: {
+                onImportMetadata(game)
+            },
+            onAddPlaythrough: onAddPlaythrough,
+            onEditGame: {
+                onEditGame(game)
+            },
+            onEditCopy: onEditCopy,
+            onEditPlaythrough: onEditPlaythrough,
+            onOpenList: open
+        )
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func listDestination(for list: GameList) -> some View {
+        GameListDetailContentView(
+            list: list,
+            allGames: allGames,
+            onDeleteList: {
+                listPendingDeletion = list
+            },
+            onOpenGame: open,
+            onAddCopy: onAddCopy,
+            onAddPlaythrough: onAddPlaythrough,
+            onEditGame: onEditGame,
+            onImportMetadata: onImportMetadata,
+            onEditCopy: onEditCopy,
+            onEditPlaythrough: onEditPlaythrough
+        )
     }
 
     private func open(_ game: Game) {

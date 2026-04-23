@@ -172,12 +172,52 @@ struct GameCoverPlaceholder: View {
     }
 }
 
+struct GameCoverArtwork: View {
+    let title: String
+    var coverURL: String = ""
+    var size: CGSize = CGSize(width: 28, height: 40)
+    var cornerRadius: CGFloat = 7
+
+    private var imageURL: URL? {
+        URL(string: coverURL)
+    }
+
+    var body: some View {
+        if let imageURL {
+            AsyncImage(url: imageURL) { phase in
+                switch phase {
+                case .empty:
+                    GameCoverPlaceholder(title: title, size: size, cornerRadius: cornerRadius)
+                case .success(let image):
+                    image
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: size.width, height: size.height)
+                        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                                .strokeBorder(.quaternary)
+                        }
+                        .accessibilityHidden(true)
+                case .failure:
+                    GameCoverPlaceholder(title: title, size: size, cornerRadius: cornerRadius)
+                @unknown default:
+                    GameCoverPlaceholder(title: title, size: size, cornerRadius: cornerRadius)
+                }
+            }
+            .frame(width: size.width, height: size.height)
+        } else {
+            GameCoverPlaceholder(title: title, size: size, cornerRadius: cornerRadius)
+        }
+    }
+}
+
 struct MacGameListRow: View {
     let game: Game
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            GameCoverPlaceholder(title: game.title)
+            GameCoverArtwork(title: game.title, coverURL: game.coverURL)
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -265,8 +305,9 @@ struct GameRowContent: View {
         .contentShape(Rectangle())
 #else
         HStack(alignment: .center, spacing: 12) {
-            GameCoverPlaceholder(
+            GameCoverArtwork(
                 title: game.title,
+                coverURL: game.coverURL,
                 size: CGSize(width: 42, height: 56),
                 cornerRadius: 8
             )

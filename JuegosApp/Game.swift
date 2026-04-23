@@ -10,11 +10,20 @@ import SwiftData
 
 @Model
 final class Game {
-    var title: String
+    var title: String = ""
     var releaseYear: Int?
-    var createdAt: Date
-    @Relationship(deleteRule: .cascade, inverse: \GameCopy.game) var copies: [GameCopy] = []
-    @Relationship(deleteRule: .cascade, inverse: \GameListEntry.game) var listEntries: [GameListEntry] = []
+    var igdbID: Int?
+    var coverURL: String = ""
+    var summary: String = ""
+    var genresText: String = ""
+    var developersText: String = ""
+    var publishersText: String = ""
+    var igdbURL: String = ""
+    var totalRating: Double?
+    var metadataImportedAt: Date?
+    var createdAt: Date = Date.now
+    @Relationship(deleteRule: .cascade, inverse: \GameCopy.game) var copies: [GameCopy]?
+    @Relationship(deleteRule: .cascade, inverse: \GameListEntry.game) var listEntries: [GameListEntry]?
 
     init(
         title: String,
@@ -26,8 +35,15 @@ final class Game {
         self.createdAt = createdAt
     }
 
+    func addCopy(_ copy: GameCopy) {
+        var currentCopies = copies ?? []
+        currentCopies.append(copy)
+        copies = currentCopies
+        copy.game = self
+    }
+
     var sortedCopies: [GameCopy] {
-        copies.sorted { lhs, rhs in
+        (copies ?? []).sorted { lhs, rhs in
             if lhs.createdAt == rhs.createdAt {
                 return lhs.platform < rhs.platform
             }
@@ -72,9 +88,11 @@ final class Game {
     }
 
     var searchableCopyText: String {
-        sortedCopies
-            .map(\.searchableText)
-            .joined(separator: " ")
+        (
+            [summary, genresText, developersText, publishersText]
+            + sortedCopies.map(\.searchableText)
+        )
+        .joined(separator: " ")
     }
 
     var primaryCopy: GameCopy? {
@@ -84,7 +102,7 @@ final class Game {
     var includedLists: [GameList] {
         var uniqueLists = [GameList]()
 
-        for entry in listEntries {
+        for entry in listEntries ?? [] {
             guard let list = entry.list,
                   !uniqueLists.contains(where: { $0.persistentModelID == list.persistentModelID })
             else {
@@ -124,7 +142,11 @@ final class Game {
     }
 
     var librarySubtitle: String {
-        platformSummary
+        if !developersText.isEmpty {
+            return developersText
+        }
+
+        return platformSummary
     }
 
     var libraryFootnote: String {
@@ -148,13 +170,28 @@ final class Game {
 
         return uniqueValues.isEmpty ? fallback : uniqueValues.joined(separator: ", ")
     }
+
+    var hasImportedMetadata: Bool {
+        igdbID != nil
+            || !coverURL.isEmpty
+            || !summary.isEmpty
+            || !genresText.isEmpty
+            || !developersText.isEmpty
+            || !publishersText.isEmpty
+            || totalRating != nil
+    }
+
+    var ratingLabel: String? {
+        guard let totalRating else { return nil }
+        return "\(Int(totalRating.rounded()))/100"
+    }
 }
 
 @Model
 final class GameList {
-    var title: String
-    var createdAt: Date
-    @Relationship(deleteRule: .cascade, inverse: \GameListEntry.list) var entries: [GameListEntry] = []
+    var title: String = ""
+    var createdAt: Date = Date.now
+    @Relationship(deleteRule: .cascade, inverse: \GameListEntry.list) var entries: [GameListEntry]?
 
     init(
         title: String,
@@ -164,8 +201,15 @@ final class GameList {
         self.createdAt = createdAt
     }
 
+    func addEntry(_ entry: GameListEntry) {
+        var currentEntries = entries ?? []
+        currentEntries.append(entry)
+        entries = currentEntries
+        entry.list = self
+    }
+
     var sortedEntries: [GameListEntry] {
-        entries.sorted { lhs, rhs in
+        (entries ?? []).sorted { lhs, rhs in
             if lhs.sortIndex == rhs.sortIndex {
                 return lhs.addedAt < rhs.addedAt
             }
@@ -191,16 +235,16 @@ final class GameList {
     }
 
     func contains(_ game: Game) -> Bool {
-        entries.contains { entry in
+        entries?.contains { entry in
             entry.game?.persistentModelID == game.persistentModelID
-        }
+        } ?? false
     }
 }
 
 @Model
 final class GameListEntry {
-    var sortIndex: Int
-    var addedAt: Date
+    var sortIndex: Int = 0
+    var addedAt: Date = Date.now
     var list: GameList?
     var game: Game?
 
@@ -217,14 +261,14 @@ final class GameListEntry {
 
 @Model
 final class GameCopy {
-    var platform: String
-    var format: String
-    var notes: String
-    var createdAt: Date
+    var platform: String = ""
+    var format: String = ""
+    var notes: String = ""
+    var createdAt: Date = Date.now
     // Legacy field kept temporarily to migrate existing copy statuses into playthroughs.
-    var status: String
+    var status: String = ""
     var game: Game?
-    @Relationship(deleteRule: .cascade, inverse: \GamePlaythrough.copy) var playthroughs: [GamePlaythrough] = []
+    @Relationship(deleteRule: .cascade, inverse: \GamePlaythrough.copy) var playthroughs: [GamePlaythrough]?
 
     init(
         platform: String,
@@ -240,8 +284,15 @@ final class GameCopy {
         self.status = status
     }
 
+    func addPlaythrough(_ playthrough: GamePlaythrough) {
+        var currentPlaythroughs = playthroughs ?? []
+        currentPlaythroughs.append(playthrough)
+        playthroughs = currentPlaythroughs
+        playthrough.copy = self
+    }
+
     var sortedPlaythroughs: [GamePlaythrough] {
-        playthroughs.sorted { lhs, rhs in
+        (playthroughs ?? []).sorted { lhs, rhs in
             if lhs.createdAt == rhs.createdAt {
                 return lhs.status < rhs.status
             }
@@ -285,15 +336,15 @@ final class GameCopy {
     }
 
     var needsLegacyPlaythroughMigration: Bool {
-        playthroughs.isEmpty && !status.isEmpty
+        (playthroughs ?? []).isEmpty && !status.isEmpty
     }
 }
 
 @Model
 final class GamePlaythrough {
-    var status: String
+    var status: String = ""
     var notes: String = ""
-    var createdAt: Date
+    var createdAt: Date = Date.now
     var copy: GameCopy?
 
     init(

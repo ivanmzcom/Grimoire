@@ -157,7 +157,7 @@ struct GamePlaythroughFormView: View {
 
     private func savePlaythrough() {
         let playthrough = GamePlaythrough(status: status, notes: cleanedNotes)
-        copy.playthroughs.append(playthrough)
+        copy.addPlaythrough(playthrough)
         modelContext.insert(playthrough)
         dismiss()
     }

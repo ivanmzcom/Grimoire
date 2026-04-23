@@ -241,7 +241,7 @@ private struct EditCopySheetRow<Content: View>: View {
         notes: "Edición estándar con caja en buen estado."
     )
 
-    game.copies.append(copy)
+    game.addCopy(copy)
 
     return GameCopyEditFormView(copy: copy)
         .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self], inMemory: true)

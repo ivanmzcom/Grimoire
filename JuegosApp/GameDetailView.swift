@@ -11,6 +11,8 @@ import SwiftData
 struct GameDetailView: View {
     let game: Game
     var onAddCopy: (() -> Void)? = nil
+    var onDeleteGame: (() -> Void)? = nil
+    var onImportMetadata: (() -> Void)? = nil
     var onAddPlaythrough: ((GameCopy) -> Void)? = nil
     var onEditGame: (() -> Void)? = nil
     var onEditCopy: ((GameCopy) -> Void)? = nil
@@ -30,8 +32,9 @@ struct GameDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 HStack(alignment: .top, spacing: 18) {
-                    GameCoverPlaceholder(
+                    GameCoverArtwork(
                         title: game.title,
+                        coverURL: game.coverURL,
                         size: CGSize(width: 84, height: 112),
                         cornerRadius: 14
                     )
@@ -59,6 +62,12 @@ struct GameDetailView: View {
 
                 GameMetadataGrid(game: game)
 
+                if game.hasImportedMetadata {
+                    Divider()
+
+                    GameImportedMetadataSection(game: game)
+                }
+
                 Divider()
 
                 GameIncludedInSection(game: game, onOpenList: onOpenList)
@@ -67,7 +76,6 @@ struct GameDetailView: View {
 
                 GameCopiesSection(
                     game: game,
-                    onAddCopy: onAddCopy,
                     onAddPlaythrough: onAddPlaythrough,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough
@@ -109,6 +117,12 @@ struct GameDetailView: View {
                 DetailRow(label: "Añadido", value: game.createdAt.formatted(date: .abbreviated, time: .omitted))
             }
 
+            if game.hasImportedMetadata {
+                Section("IGDB") {
+                    GameImportedMetadataSection(game: game, showsTitle: false)
+                }
+            }
+
             Section("Incluido en") {
                 GameIncludedInSection(game: game, showsTitle: false, onOpenList: onOpenList)
             }
@@ -116,7 +130,6 @@ struct GameDetailView: View {
             Section("Copias") {
                 GameCopiesSection(
                     game: game,
-                    onAddCopy: onAddCopy,
                     onAddPlaythrough: onAddPlaythrough,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough,
@@ -137,11 +150,17 @@ struct GameDetailView: View {
     }
 
     private var hasGameActions: Bool {
-        onEditGame != nil || onAddCopy != nil
+        onEditGame != nil || onAddCopy != nil || onDeleteGame != nil || onImportMetadata != nil
     }
 
     private var gameActionsMenu: some View {
         Menu {
+            if let onImportMetadata {
+                Button(action: onImportMetadata) {
+                    Label("Importar desde IGDB", systemImage: "magnifyingglass")
+                }
+            }
+
             if let onEditGame {
                 Button(action: onEditGame) {
                     Label("Editar juego", systemImage: "pencil")
@@ -153,8 +172,16 @@ struct GameDetailView: View {
                     Label("Añadir copia", systemImage: "square.stack.badge.plus")
                 }
             }
+
+            if let onDeleteGame {
+                Divider()
+
+                Button(role: .destructive, action: onDeleteGame) {
+                    Label("Eliminar juego", systemImage: "trash")
+                }
+            }
         } label: {
-            Label("Acciones", systemImage: "ellipsis.circle")
+            Label("Acciones", systemImage: "ellipsis")
         }
     }
 }
@@ -196,6 +223,57 @@ private struct GameMetadataGrid: View {
     }
 }
 #endif
+
+private struct GameImportedMetadataSection: View {
+    let game: Game
+    var showsTitle = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if showsTitle {
+                Text("IGDB")
+                    .font(.headline)
+            }
+
+            if !game.summary.isEmpty {
+                Text(game.summary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                if !game.developersText.isEmpty {
+                    DetailRow(label: "Desarrolladora", value: game.developersText)
+                }
+
+                if !game.publishersText.isEmpty {
+                    DetailRow(label: "Editora", value: game.publishersText)
+                }
+
+                if !game.genresText.isEmpty {
+                    DetailRow(label: "Géneros", value: game.genresText)
+                }
+
+                if let ratingLabel = game.ratingLabel {
+                    DetailRow(label: "Rating", value: ratingLabel)
+                }
+
+                if let metadataImportedAt = game.metadataImportedAt {
+                    DetailRow(
+                        label: "Importado",
+                        value: metadataImportedAt.formatted(date: .abbreviated, time: .shortened)
+                    )
+                }
+            }
+
+            if let url = URL(string: game.igdbURL), !game.igdbURL.isEmpty {
+                Link(destination: url) {
+                    Label("Ver en IGDB", systemImage: "arrow.up.forward.square")
+                }
+                .font(.callout)
+            }
+        }
+    }
+}
 
 private struct GameIncludedInSection: View {
     let game: Game
@@ -270,7 +348,6 @@ private struct GameIncludedListRow: View {
 
 private struct GameCopiesSection: View {
     let game: Game
-    var onAddCopy: (() -> Void)?
     var onAddPlaythrough: ((GameCopy) -> Void)?
     var onEditCopy: ((GameCopy) -> Void)?
     var onEditPlaythrough: ((GamePlaythrough) -> Void)?
@@ -278,22 +355,9 @@ private struct GameCopiesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            if showsTitle || onAddCopy != nil {
-                HStack {
-                    if showsTitle {
-                        Text("Copias")
-                            .font(.headline)
-                    }
-
-                    Spacer()
-
-                    if let onAddCopy {
-                        Button(action: onAddCopy) {
-                            Label("Añadir copia", systemImage: "plus")
-                        }
-                            .platformInlineActionButtonStyle()
-                    }
-                }
+            if showsTitle {
+                Text("Copias")
+                    .font(.headline)
             }
 
             if game.sortedCopies.isEmpty {
@@ -487,23 +551,23 @@ private extension View {
         title: "The Legend of Zelda: Tears of the Kingdom",
         releaseYear: 2023
     )
-    game.copies.append(
+    game.addCopy(
         GameCopy(
             platform: "Nintendo Switch",
             format: "Físico",
             notes: "Edición estándar con funda en buen estado."
         )
     )
-    game.copies.append(
+    game.addCopy(
         GameCopy(
             platform: "Nintendo Switch",
             format: "Digital"
         )
     )
 
-    game.copies[0].playthroughs.append(GamePlaythrough(status: "Jugando"))
-    game.copies[0].playthroughs.append(GamePlaythrough(status: "Completado"))
-    game.copies[1].playthroughs.append(GamePlaythrough(status: "Archivado"))
+    game.sortedCopies[0].addPlaythrough(GamePlaythrough(status: "Jugando"))
+    game.sortedCopies[0].addPlaythrough(GamePlaythrough(status: "Completado"))
+    game.sortedCopies[1].addPlaythrough(GamePlaythrough(status: "Archivado"))
 
     return GameDetailView(game: game)
 }

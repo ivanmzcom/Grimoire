@@ -168,7 +168,7 @@ struct GameCopyFormView: View {
             notes: cleanedNotes
         )
 
-        game.copies.append(copy)
+        game.addCopy(copy)
         modelContext.insert(copy)
         dismiss()
     }
