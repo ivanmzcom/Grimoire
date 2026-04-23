@@ -253,6 +253,13 @@ struct IGDBGameMetadata: Decodable, Hashable, Identifiable {
         return screenshot.normalizedURL(size: "t_screenshot_big")
     }
 
+    var normalizedGalleryImageURLs: [String] {
+        uniqueURLs(
+            ((screenshots ?? []) + (artworks ?? []))
+                .map { $0.normalizedURL(size: "t_1080p") }
+        )
+    }
+
     private func preferredHorizontalImage(in assets: [IGDBImageAsset]?) -> IGDBImageAsset? {
         assets?.first { asset in
             guard let width = asset.width, let height = asset.height else { return true }
@@ -341,6 +348,22 @@ struct IGDBGameMetadata: Decodable, Hashable, Identifiable {
             guard !trimmedValue.isEmpty,
                   !uniqueValues.contains(where: { $0.localizedCaseInsensitiveCompare(trimmedValue) == .orderedSame })
             else {
+                continue
+            }
+
+            uniqueValues.append(trimmedValue)
+        }
+
+        return uniqueValues
+    }
+
+    private func uniqueURLs(_ values: [String]) -> [String] {
+        var uniqueValues = [String]()
+
+        for value in values {
+            let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !trimmedValue.isEmpty, !uniqueValues.contains(trimmedValue) else {
                 continue
             }
 
@@ -445,6 +468,7 @@ extension Game {
         let normalizedCoverURL = metadata.normalizedCoverURL
         let normalizedHeroImageURL = metadata.normalizedHeroImageURL
         let normalizedScreenshotURL = metadata.normalizedScreenshotURL
+        let normalizedGalleryImageURLs = metadata.normalizedGalleryImageURLs
 
         if !normalizedCoverURL.isEmpty {
             coverURL = normalizedCoverURL
@@ -457,6 +481,11 @@ extension Game {
         if !normalizedScreenshotURL.isEmpty {
             screenshotURL = normalizedScreenshotURL
         }
+
+        if !normalizedGalleryImageURLs.isEmpty {
+            galleryImageURLsText = normalizedGalleryImageURLs.joined(separator: "\n")
+        }
+
         summary = metadata.summary ?? ""
         genresText = metadata.genresText
         developersText = metadata.developersText

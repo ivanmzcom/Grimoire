@@ -16,6 +16,13 @@ struct GamePlaythroughFormView: View {
 
     @State private var status = GameCatalog.statuses[0]
     @State private var notes = ""
+    @State private var hasStartedAt = false
+    @State private var startedAt = Date.now
+    @State private var hasCompletedAt = false
+    @State private var completedAt = Date.now
+    @State private var hoursPlayed = ""
+    @State private var personalRating = 0
+    @State private var difficulty = ""
 
     private var copyLabel: String {
         [copy.platform, copy.format]
@@ -29,8 +36,38 @@ struct GamePlaythroughFormView: View {
 
     private var notesPreview: String {
         cleanedNotes.isEmpty
-            ? "Añade contexto de esta partida, dificultad, ruta, personaje o cualquier detalle útil."
+            ? "Añade contexto de esta partida, ruta, personaje o cualquier detalle útil."
             : cleanedNotes
+    }
+
+    private var cleanedDifficulty: String {
+        difficulty.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var parsedHoursPlayed: Double? {
+        let cleanedValue = hoursPlayed
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: ",", with: ".")
+
+        guard !cleanedValue.isEmpty else { return nil }
+        return Double(cleanedValue)
+    }
+
+    private var hasValidHoursPlayed: Bool {
+        guard let parsedHoursPlayed else {
+            return hoursPlayed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+
+        return parsedHoursPlayed >= 0
+    }
+
+    private var hasValidDateRange: Bool {
+        guard hasStartedAt, hasCompletedAt else { return true }
+        return startedAt <= completedAt
+    }
+
+    private var canSave: Bool {
+        hasValidHoursPlayed && hasValidDateRange
     }
 
     var body: some View {
@@ -67,6 +104,70 @@ struct GamePlaythroughFormView: View {
                     PlaythroughSheetRow(label: "Estado") {
                         Picker("", selection: $status) {
                             ForEach(GameCatalog.statuses, id: \.self) { option in
+                                Text(option).tag(option)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 180, alignment: .leading)
+                    }
+                }
+
+                PlaythroughSheetSection(
+                    title: "Fechas",
+                    help: "Marca cuándo empezó o terminó esta partida si quieres llevar histórico."
+                ) {
+                    PlaythroughSheetDateRow(
+                        label: "Inicio",
+                        isEnabled: $hasStartedAt,
+                        date: $startedAt
+                    )
+
+                    PlaythroughSheetDateRow(
+                        label: "Finalización",
+                        isEnabled: $hasCompletedAt,
+                        date: $completedAt
+                    )
+
+                    if !hasValidDateRange {
+                        Text("La fecha de finalización no puede ser anterior a la de inicio.")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                PlaythroughSheetSection(
+                    title: "Experiencia",
+                    help: "Registra duración, valoración personal y dificultad elegida."
+                ) {
+                    PlaythroughSheetRow(label: "Horas") {
+                        TextField("Opcional", text: $hoursPlayed)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 120)
+                    }
+
+                    if !hasValidHoursPlayed {
+                        Text("Introduce un número de horas válido.")
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+
+                    PlaythroughSheetRow(label: "Valoración") {
+                        Picker("", selection: $personalRating) {
+                            Text("Sin valorar").tag(0)
+
+                            ForEach(1...10, id: \.self) { rating in
+                                Text("\(rating)/10").tag(rating)
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 160, alignment: .leading)
+                    }
+
+                    PlaythroughSheetRow(label: "Dificultad") {
+                        Picker("", selection: $difficulty) {
+                            Text("Sin definir").tag("")
+
+                            ForEach(GameCatalog.difficulties, id: \.self) { option in
                                 Text(option).tag(option)
                             }
                         }
@@ -114,11 +215,12 @@ struct GamePlaythroughFormView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
+                .disabled(!canSave)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 14)
         }
-        .frame(minWidth: 520, idealWidth: 580, minHeight: 430, idealHeight: 500)
+        .frame(minWidth: 560, idealWidth: 620, minHeight: 660, idealHeight: 720)
     }
 #else
     private var iosForm: some View {
@@ -132,8 +234,53 @@ struct GamePlaythroughFormView: View {
                     }
                 }
 
+                Section("Fechas") {
+                    Toggle("Fecha de inicio", isOn: $hasStartedAt)
+
+                    if hasStartedAt {
+                        DatePicker("Inicio", selection: $startedAt, displayedComponents: .date)
+                    }
+
+                    Toggle("Fecha de finalización", isOn: $hasCompletedAt)
+
+                    if hasCompletedAt {
+                        DatePicker("Finalización", selection: $completedAt, displayedComponents: .date)
+                    }
+
+                    if !hasValidDateRange {
+                        Text("La fecha de finalización no puede ser anterior a la de inicio.")
+                            .foregroundStyle(.red)
+                    }
+                }
+
+                Section("Experiencia") {
+                    TextField("Horas jugadas", text: $hoursPlayed)
+                        .keyboardType(.decimalPad)
+
+                    if !hasValidHoursPlayed {
+                        Text("Introduce un número de horas válido.")
+                            .foregroundStyle(.red)
+                    }
+
+                    Picker("Valoración", selection: $personalRating) {
+                        Text("Sin valorar").tag(0)
+
+                        ForEach(1...10, id: \.self) { rating in
+                            Text("\(rating)/10").tag(rating)
+                        }
+                    }
+
+                    Picker("Dificultad", selection: $difficulty) {
+                        Text("Sin definir").tag("")
+
+                        ForEach(GameCatalog.difficulties, id: \.self) { option in
+                            Text(option).tag(option)
+                        }
+                    }
+                }
+
                 Section("Notas") {
-                    TextField("Dificultad, ruta, personaje, contexto...", text: $notes, axis: .vertical)
+                    TextField("Ruta, personaje, contexto...", text: $notes, axis: .vertical)
                         .lineLimit(4, reservesSpace: true)
                 }
             }
@@ -149,6 +296,7 @@ struct GamePlaythroughFormView: View {
                     Button("Guardar") {
                         savePlaythrough()
                     }
+                    .disabled(!canSave)
                 }
             }
         }
@@ -156,7 +304,15 @@ struct GamePlaythroughFormView: View {
 #endif
 
     private func savePlaythrough() {
-        let playthrough = GamePlaythrough(status: status, notes: cleanedNotes)
+        let playthrough = GamePlaythrough(
+            status: status,
+            notes: cleanedNotes,
+            startedAt: hasStartedAt ? startedAt : nil,
+            completedAt: hasCompletedAt ? completedAt : nil,
+            hoursPlayed: parsedHoursPlayed,
+            personalRating: personalRating == 0 ? nil : personalRating,
+            difficulty: cleanedDifficulty
+        )
         copy.addPlaythrough(playthrough)
         modelContext.insert(playthrough)
         dismiss()
@@ -197,6 +353,25 @@ private struct PlaythroughSheetRow<Content: View>: View {
 
             content
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct PlaythroughSheetDateRow: View {
+    let label: String
+    @Binding var isEnabled: Bool
+    @Binding var date: Date
+
+    var body: some View {
+        PlaythroughSheetRow(label: label) {
+            HStack(spacing: 12) {
+                Toggle("", isOn: $isEnabled)
+                    .labelsHidden()
+
+                DatePicker("", selection: $date, displayedComponents: .date)
+                    .labelsHidden()
+                    .disabled(!isEnabled)
+            }
         }
     }
 }

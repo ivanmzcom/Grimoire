@@ -22,6 +22,7 @@ struct GameDetailView: View {
 
     @State private var copyPendingDeletion: GameCopy?
     @State private var playthroughPendingDeletion: GamePlaythrough?
+    @State private var selectedGalleryImage: GameGalleryImage?
 
     private var copyCountLabel: String {
         game.copyCount == 1 ? "1 copia" : "\(game.copyCount) copias"
@@ -33,45 +34,59 @@ struct GameDetailView: View {
 
     var body: some View {
 #if os(macOS)
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                GameDetailHeroHeader(game: game)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    GameDetailHeroHeader(game: game)
 
-                Divider()
-
-                GameMetadataGrid(game: game)
-
-                if game.hasImportedMetadata {
                     Divider()
 
-                    GameImportedMetadataSection(game: game)
+                    GameMetadataGrid(game: game)
+
+                    if game.hasImportedMetadata {
+                        Divider()
+
+                        GameImportedMetadataSection(game: game)
+                    }
+
+                    if !game.galleryImageURLs.isEmpty {
+                        Divider()
+
+                        GameImageGallerySection(game: game) { imageURL in
+                            selectedGalleryImage = GameGalleryImage(url: imageURL)
+                        }
+                    }
+
+                    Divider()
+
+                    GameTagsSection(game: game)
+
+                    Divider()
+
+                    GameExternalLinksSection(game: game)
+
+                    Divider()
+
+                    GameIncludedInSection(game: game, onOpenList: onOpenList)
+
+                    Divider()
+
+                    GameCopiesSection(
+                        game: game,
+                        onAddPlaythrough: onAddPlaythrough,
+                        onEditCopy: onEditCopy,
+                        onEditPlaythrough: onEditPlaythrough,
+                        onDeleteCopy: { copyPendingDeletion = $0 },
+                        onDeletePlaythrough: { playthroughPendingDeletion = $0 }
+                    )
                 }
-
-                Divider()
-
-                GameTagsSection(game: game)
-
-                Divider()
-
-                GameExternalLinksSection(game: game)
-
-                Divider()
-
-                GameIncludedInSection(game: game, onOpenList: onOpenList)
-
-                Divider()
-
-                GameCopiesSection(
-                    game: game,
-                    onAddPlaythrough: onAddPlaythrough,
-                    onEditCopy: onEditCopy,
-                    onEditPlaythrough: onEditPlaythrough,
-                    onDeleteCopy: { copyPendingDeletion = $0 },
-                    onDeletePlaythrough: { playthroughPendingDeletion = $0 }
+                .padding(32)
+                .frame(
+                    maxWidth: min(max(proxy.size.width - 64, 760), 1160),
+                    alignment: .leading
                 )
+                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .padding(32)
-            .frame(maxWidth: 760, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationTitle(game.title)
@@ -110,6 +125,9 @@ struct GameDetailView: View {
         } message: { playthrough in
             Text("Se eliminará la partida \"\(playthrough.status)\".")
         }
+        .sheet(item: $selectedGalleryImage) { galleryImage in
+            GameGalleryFullscreenImage(image: galleryImage)
+        }
 #else
         List {
             Section {
@@ -127,6 +145,14 @@ struct GameDetailView: View {
             if game.hasImportedMetadata {
                 Section("IGDB") {
                     GameImportedMetadataSection(game: game, showsTitle: false)
+                }
+            }
+
+            if !game.galleryImageURLs.isEmpty {
+                Section("Galería") {
+                    GameImageGallerySection(game: game, showsTitle: false) { imageURL in
+                        selectedGalleryImage = GameGalleryImage(url: imageURL)
+                    }
                 }
             }
 
@@ -190,6 +216,9 @@ struct GameDetailView: View {
             }
         } message: { playthrough in
             Text("Se eliminará la partida \"\(playthrough.status)\".")
+        }
+        .fullScreenCover(item: $selectedGalleryImage) { galleryImage in
+            GameGalleryFullscreenImage(image: galleryImage)
         }
 #endif
     }
@@ -375,6 +404,178 @@ private struct GameImportedMetadataSection: View {
     }
 }
 
+private struct GameGalleryImage: Identifiable, Hashable {
+    let url: String
+
+    var id: String {
+        url
+    }
+}
+
+private struct GameImageGallerySection: View {
+    let game: Game
+    var showsTitle = true
+    let onSelectImage: (String) -> Void
+
+    private var imageURLs: [String] {
+        game.galleryImageURLs
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if showsTitle {
+                Text("Galería")
+                    .font(.headline)
+            }
+
+            if imageURLs.isEmpty {
+                GameGalleryFallback(title: game.title)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(imageURLs, id: \.self) { imageURL in
+                            Button {
+                                onSelectImage(imageURL)
+                            } label: {
+                                GameGalleryThumbnail(imageURL: imageURL, title: game.title)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Abrir imagen de \(game.title)")
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+    }
+}
+
+private struct GameGalleryThumbnail: View {
+    let imageURL: String
+    let title: String
+
+    private var url: URL? {
+        URL(string: imageURL)
+    }
+
+    var body: some View {
+        ZStack {
+            if let url {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .scaledToFill()
+                    case .failure:
+                        GameGalleryFallback(title: title)
+                    default:
+                        ProgressView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color.primary.opacity(0.06))
+                    }
+                }
+            } else {
+                GameGalleryFallback(title: title)
+            }
+        }
+        .frame(width: 210, height: 118)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(.quaternary)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+private struct GameGalleryFallback: View {
+    let title: String
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+
+            VStack(spacing: 8) {
+                Image(systemName: "photo.on.rectangle.angled")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Text(title)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(12)
+        }
+    }
+}
+
+private struct GameGalleryFullscreenImage: View {
+    let image: GameGalleryImage
+
+    @Environment(\.dismiss) private var dismiss
+
+    private var url: URL? {
+        URL(string: image.url)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                Color.black
+                    .ignoresSafeArea()
+
+                if let url {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let loadedImage):
+                            loadedImage
+                                .resizable()
+                                .scaledToFit()
+                                .frame(
+                                    maxWidth: proxy.size.width - 48,
+                                    maxHeight: proxy.size.height - 48
+                                )
+                        case .failure:
+                            unavailableImage
+                        default:
+                            ProgressView()
+                                .tint(.white)
+                        }
+                    }
+                } else {
+                    unavailableImage
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    dismiss()
+                } label: {
+                    Label("Cerrar", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .padding()
+                .keyboardShortcut(.cancelAction)
+            }
+        }
+        .frame(minWidth: 960, idealWidth: 1200, minHeight: 720, idealHeight: 900)
+    }
+
+    private var unavailableImage: some View {
+        ContentUnavailableView(
+            "Imagen no disponible",
+            systemImage: "photo",
+            description: Text("No se pudo cargar esta imagen.")
+        )
+        .foregroundStyle(.white)
+    }
+}
+
 private struct GameTagsSection: View {
     let game: Game
     var showsTitle = true
@@ -392,7 +593,11 @@ private struct GameTagsSection: View {
             } else {
                 FlowLayout(spacing: 8) {
                     ForEach(game.sortedTags) { tag in
-                        GamePill(text: tag.name)
+                        NavigationLink(value: GameLibraryDetailRoute.tag(tag.persistentModelID)) {
+                            GamePill(text: tag.name)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Ver juegos con la etiqueta \(tag.name)")
                     }
                 }
             }
@@ -737,6 +942,56 @@ private struct GamePlaythroughRow: View {
     var onEdit: ((GamePlaythrough) -> Void)?
     var onDelete: ((GamePlaythrough) -> Void)?
 
+    private static let hoursFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 1
+        formatter.numberStyle = .decimal
+        return formatter
+    }()
+
+    private var statusLabel: String {
+        playthrough.status.isEmpty ? "Sin estado" : playthrough.status
+    }
+
+    private var createdAtLabel: String {
+        playthrough.createdAt.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private var dateRangeLabel: String? {
+        switch (playthrough.startedAt, playthrough.completedAt) {
+        case let (startedAt?, completedAt?):
+            return "\(startedAt.formatted(date: .abbreviated, time: .omitted)) - \(completedAt.formatted(date: .abbreviated, time: .omitted))"
+        case let (startedAt?, nil):
+            return "Inicio \(startedAt.formatted(date: .abbreviated, time: .omitted))"
+        case let (nil, completedAt?):
+            return "Fin \(completedAt.formatted(date: .abbreviated, time: .omitted))"
+        case (nil, nil):
+            return nil
+        }
+    }
+
+    private var hoursPlayedLabel: String? {
+        guard let hoursPlayed = playthrough.hoursPlayed else { return nil }
+
+        let value = Self.hoursFormatter.string(from: NSNumber(value: hoursPlayed)) ?? "\(hoursPlayed)"
+        return "\(value) h"
+    }
+
+    private var personalRatingLabel: String? {
+        guard let personalRating = playthrough.personalRating else { return nil }
+        return "\(personalRating)/10"
+    }
+
+    private var metadataItems: [String] {
+        [
+            dateRangeLabel,
+            hoursPlayedLabel,
+            personalRatingLabel,
+            playthrough.difficulty.isEmpty ? nil : playthrough.difficulty
+        ].compactMap(\.self)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -745,7 +1000,7 @@ private struct GamePlaythroughRow: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 64, alignment: .leading)
 
-                Text(playthrough.status)
+                Text(statusLabel)
                     .font(.body)
 
                 Spacer(minLength: 8)
@@ -772,9 +1027,17 @@ private struct GamePlaythroughRow: View {
                     .help("Eliminar partida")
                 }
 
-                Text(playthrough.createdAt.formatted(date: .abbreviated, time: .omitted))
+                Text(createdAtLabel)
                     .font(.caption)
                     .foregroundStyle(.tertiary)
+            }
+
+            if !metadataItems.isEmpty {
+                Text(metadataItems.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 74)
             }
 
             if !playthrough.notes.isEmpty {

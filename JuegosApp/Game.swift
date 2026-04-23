@@ -16,6 +16,7 @@ final class Game {
     var coverURL: String = ""
     var heroImageURL: String = ""
     var screenshotURL: String = ""
+    var galleryImageURLsText: String = ""
     var summary: String = ""
     var genresText: String = ""
     var developersText: String = ""
@@ -216,12 +217,35 @@ final class Game {
             || !publishersText.isEmpty
             || !heroImageURL.isEmpty
             || !screenshotURL.isEmpty
+            || !galleryImageURLsText.isEmpty
             || totalRating != nil
     }
 
     var ratingLabel: String? {
         guard let totalRating else { return nil }
         return "\(Int(totalRating.rounded()))/100"
+    }
+
+    var galleryImageURLs: [String] {
+        let importedURLs = galleryImageURLsText
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+        return uniqueImageURLs(importedURLs + [heroImageURL, screenshotURL])
+    }
+
+    private func uniqueImageURLs(_ urls: [String]) -> [String] {
+        var uniqueURLs = [String]()
+
+        for url in urls {
+            guard !url.isEmpty, !uniqueURLs.contains(url) else {
+                continue
+            }
+
+            uniqueURLs.append(url)
+        }
+
+        return uniqueURLs
     }
 }
 
@@ -416,7 +440,7 @@ final class GameCopy {
     var searchableText: String {
         (
             [platform, format, notes, status]
-            + sortedPlaythroughs.flatMap { [$0.status, $0.notes] }
+            + sortedPlaythroughs.flatMap { [$0.status, $0.difficulty, $0.notes] }
         )
         .joined(separator: " ")
     }
@@ -431,16 +455,31 @@ final class GamePlaythrough {
     var status: String = ""
     var notes: String = ""
     var createdAt: Date = Date.now
+    var startedAt: Date?
+    var completedAt: Date?
+    var hoursPlayed: Double?
+    var personalRating: Int?
+    var difficulty: String = ""
     var copy: GameCopy?
 
     init(
         status: String,
         notes: String = "",
-        createdAt: Date = .now
+        createdAt: Date = .now,
+        startedAt: Date? = nil,
+        completedAt: Date? = nil,
+        hoursPlayed: Double? = nil,
+        personalRating: Int? = nil,
+        difficulty: String = ""
     ) {
         self.status = status
         self.notes = notes
         self.createdAt = createdAt
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+        self.hoursPlayed = hoursPlayed
+        self.personalRating = personalRating
+        self.difficulty = difficulty
     }
 }
 
@@ -469,6 +508,14 @@ enum GameCatalog {
         "Jugando",
         "Completado",
         "Archivado"
+    ]
+
+    static let difficulties = [
+        "Fácil",
+        "Normal",
+        "Difícil",
+        "Muy difícil",
+        "Experto"
     ]
 
 }

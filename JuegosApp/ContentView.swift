@@ -19,6 +19,69 @@ private enum LibrarySidebarItem {
     static let lists = "__lists__"
 }
 
+private enum SmartLibraryCollection: String, CaseIterable, Identifiable {
+    case missingCover = "__smart_missing_cover__"
+    case missingPlaythroughs = "__smart_missing_playthroughs__"
+    case playing = "__smart_playing__"
+    case completed = "__smart_completed__"
+    case recentlyAdded = "__smart_recently_added__"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .missingCover:
+            return "Sin portada"
+        case .missingPlaythroughs:
+            return "Sin partidas"
+        case .playing:
+            return "Jugando"
+        case .completed:
+            return "Completados"
+        case .recentlyAdded:
+            return "Añadidos recientemente"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .missingCover:
+            return "photo"
+        case .missingPlaythroughs:
+            return "flag.slash"
+        case .playing:
+            return "play.circle"
+        case .completed:
+            return "checkmark.circle"
+        case .recentlyAdded:
+            return "clock.badge.checkmark"
+        }
+    }
+
+    static func collection(for value: String) -> SmartLibraryCollection? {
+        SmartLibraryCollection(rawValue: value)
+    }
+
+    static func contains(_ value: String) -> Bool {
+        collection(for: value) != nil
+    }
+
+    func matches(_ game: Game, in allGames: [Game]) -> Bool {
+        switch self {
+        case .missingCover:
+            return game.coverURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .missingPlaythroughs:
+            return game.playthroughCount == 0
+        case .playing:
+            return game.hasPlaythroughStatus("Jugando")
+        case .completed:
+            return game.hasPlaythroughStatus("Completado")
+        case .recentlyAdded:
+            return game.createdAt >= Date.now.addingTimeInterval(-30 * 24 * 60 * 60)
+        }
+    }
+}
+
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: [SortDescriptor(\Game.title)]) private var games: [Game]
@@ -75,7 +138,7 @@ struct ContentView: View {
     }
 
     private var filteredGames: [Game] {
-        games.filter { game in
+        let filteredGames = games.filter { game in
             let matchesPlatform: Bool = switch selectedPlatform {
             case LibrarySidebarItem.allGames:
                 true
@@ -84,7 +147,11 @@ struct ContentView: View {
             case LibrarySidebarItem.lists:
                 true
             default:
-                game.sortedCopies.contains(where: { $0.platform == selectedPlatform })
+                if let smartCollection = SmartLibraryCollection.collection(for: selectedPlatform) {
+                    smartCollection.matches(game, in: games)
+                } else {
+                    game.sortedCopies.contains(where: { $0.platform == selectedPlatform })
+                }
             }
 
             let matchesSearch = searchText.isEmpty
@@ -92,6 +159,18 @@ struct ContentView: View {
                 || containsSearchText(in: game.searchableCopyText)
             return matchesPlatform && matchesSearch
         }
+
+        if selectedPlatform == SmartLibraryCollection.recentlyAdded.rawValue {
+            return filteredGames.sorted { lhs, rhs in
+                if lhs.createdAt == rhs.createdAt {
+                    return lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+                }
+
+                return lhs.createdAt > rhs.createdAt
+            }
+        }
+
+        return filteredGames
     }
 
     private var filteredGameLists: [GameList] {
@@ -391,6 +470,7 @@ struct ContentView: View {
         guard selectedPlatform != LibrarySidebarItem.allGames,
               selectedPlatform != LibrarySidebarItem.wishlist,
               selectedPlatform != LibrarySidebarItem.lists,
+              !SmartLibraryCollection.contains(selectedPlatform),
               !usedPlatforms.contains(selectedPlatform)
         else {
             return
@@ -435,12 +515,38 @@ struct ContentView: View {
                 return !filteredGames.contains(where: { $0.persistentModelID == id })
             case .list(let id):
                 return !filteredGameLists.contains(where: { $0.persistentModelID == id })
+            case .tag(let id):
+                return tag(for: id) == nil
             }
         }
 
         gamesNavigationPath.removeAll(where: shouldRemove)
         listsNavigationPath.removeAll(where: shouldRemove)
 #endif
+    }
+
+    private func tag(for id: PersistentIdentifier) -> GameTag? {
+        for game in games {
+            if let tag = game.sortedTags.first(where: { $0.persistentModelID == id }) {
+                return tag
+            }
+        }
+
+        return nil
+    }
+}
+
+private extension Game {
+    func hasPlaythroughStatus(_ expectedStatus: String) -> Bool {
+        sortedCopies.contains { copy in
+            if copy.status.localizedCaseInsensitiveCompare(expectedStatus) == .orderedSame {
+                return true
+            }
+
+            return copy.sortedPlaythroughs.contains { playthrough in
+                playthrough.status.localizedCaseInsensitiveCompare(expectedStatus) == .orderedSame
+            }
+        }
     }
 }
 
@@ -516,6 +622,17 @@ private struct MacLibraryView: View {
                         count: wishlistCount
                     )
                     .tag(LibrarySidebarItem.wishlist)
+                }
+
+                Section("Colecciones inteligentes") {
+                    ForEach(SmartLibraryCollection.allCases) { collection in
+                        SidebarFilterRow(
+                            title: collection.title,
+                            systemImage: collection.systemImage,
+                            count: count(for: collection)
+                        )
+                        .tag(collection.rawValue)
+                    }
                 }
 
                 Section("Plataformas") {
@@ -723,6 +840,20 @@ private struct MacLibraryView: View {
                     description: Text("Esta lista ya no está disponible.")
                 )
             }
+        case .tag(let tagID):
+            if let tag = tag(for: tagID) {
+                GameTagDetailContentView(
+                    tag: tag,
+                    games: games(for: tag),
+                    onOpenGame: openGameInDetail
+                )
+            } else {
+                ContentUnavailableView(
+                    "Etiqueta no disponible",
+                    systemImage: "tag",
+                    description: Text("Esta etiqueta ya no está disponible.")
+                )
+            }
         }
     }
 
@@ -734,9 +865,31 @@ private struct MacLibraryView: View {
         detailNavigationPath.append(.list(list.persistentModelID))
     }
 
+    private func tag(for id: PersistentIdentifier) -> GameTag? {
+        for game in allGames {
+            if let tag = game.sortedTags.first(where: { $0.persistentModelID == id }) {
+                return tag
+            }
+        }
+
+        return nil
+    }
+
+    private func games(for tag: GameTag) -> [Game] {
+        allGames
+            .filter { $0.hasTag(tag) }
+            .sorted { lhs, rhs in
+                lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+            }
+    }
+
     private var navigationTitle: String {
         if isShowingLists {
             return "Listas"
+        }
+
+        if let smartCollection = SmartLibraryCollection.collection(for: selectedPlatform) {
+            return smartCollection.title
         }
 
         if selectedPlatform == LibrarySidebarItem.allGames {
@@ -755,6 +908,12 @@ private struct MacLibraryView: View {
             listPendingDeletion = selectedGameList
         } else {
             gamePendingDeletion = selectedGame
+        }
+    }
+
+    private func count(for collection: SmartLibraryCollection) -> Int {
+        allGames.count { game in
+            collection.matches(game, in: allGames)
         }
     }
 }
@@ -863,6 +1022,11 @@ private struct IOSGamesLibraryTab: View {
             return wishlistCount == 1 ? "1 juego en wishlist" : "\(wishlistCount) juegos en wishlist"
         }
 
+        if let smartCollection = SmartLibraryCollection.collection(for: selectedPlatform) {
+            let visible = games.count == 1 ? "1 juego" : "\(games.count) juegos"
+            return "\(visible) · \(smartCollection.title)"
+        }
+
         let visible = games.count == 1 ? "1 juego" : "\(games.count) juegos"
         let total = totalCount == 1 ? "1 total" : "\(totalCount) totales"
         return "\(visible) de \(total)"
@@ -941,6 +1105,12 @@ private struct IOSGamesLibraryTab: View {
                 filterButton(for: LibrarySidebarItem.wishlist)
             }
 
+            Section("Colecciones inteligentes") {
+                ForEach(SmartLibraryCollection.allCases) { collection in
+                    filterButton(for: collection.rawValue, title: collection.title)
+                }
+            }
+
             Section("Plataformas") {
                 ForEach(platformOptions.filter { $0 != LibrarySidebarItem.allGames && $0 != LibrarySidebarItem.wishlist }, id: \.self) { platform in
                     filterButton(for: platform)
@@ -971,6 +1141,10 @@ private struct IOSGamesLibraryTab: View {
         case LibrarySidebarItem.wishlist:
             return "Wishlist"
         default:
+            if let smartCollection = SmartLibraryCollection.collection(for: platform) {
+                return smartCollection.title
+            }
+
             return platform
         }
     }
@@ -1027,6 +1201,20 @@ private struct IOSGamesLibraryTab: View {
                     description: Text("Esta lista ya no está disponible.")
                 )
             }
+        case .tag(let tagID):
+            if let tag = tag(for: tagID) {
+                GameTagDetailContentView(
+                    tag: tag,
+                    games: games(for: tag),
+                    onOpenGame: open
+                )
+            } else {
+                ContentUnavailableView(
+                    "Etiqueta no disponible",
+                    systemImage: "tag",
+                    description: Text("Esta etiqueta ya no está disponible.")
+                )
+            }
         }
     }
 
@@ -1036,6 +1224,24 @@ private struct IOSGamesLibraryTab: View {
 
     private func open(_ list: GameList) {
         navigationPath.append(.list(list.persistentModelID))
+    }
+
+    private func tag(for id: PersistentIdentifier) -> GameTag? {
+        for game in allGames {
+            if let tag = game.sortedTags.first(where: { $0.persistentModelID == id }) {
+                return tag
+            }
+        }
+
+        return nil
+    }
+
+    private func games(for tag: GameTag) -> [Game] {
+        allGames
+            .filter { $0.hasTag(tag) }
+            .sorted { lhs, rhs in
+                lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+            }
     }
 }
 
@@ -1164,6 +1370,20 @@ private struct IOSListsLibraryTab: View {
                     description: Text("Esta lista ya no está disponible.")
                 )
             }
+        case .tag(let tagID):
+            if let tag = tag(for: tagID) {
+                GameTagDetailContentView(
+                    tag: tag,
+                    games: games(for: tag),
+                    onOpenGame: open
+                )
+            } else {
+                ContentUnavailableView(
+                    "Etiqueta no disponible",
+                    systemImage: "tag",
+                    description: Text("Esta etiqueta ya no está disponible.")
+                )
+            }
         }
     }
 
@@ -1210,6 +1430,24 @@ private struct IOSListsLibraryTab: View {
 
     private func open(_ list: GameList) {
         navigationPath.append(.list(list.persistentModelID))
+    }
+
+    private func tag(for id: PersistentIdentifier) -> GameTag? {
+        for game in allGames {
+            if let tag = game.sortedTags.first(where: { $0.persistentModelID == id }) {
+                return tag
+            }
+        }
+
+        return nil
+    }
+
+    private func games(for tag: GameTag) -> [Game] {
+        allGames
+            .filter { $0.hasTag(tag) }
+            .sorted { lhs, rhs in
+                lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+            }
     }
 }
 #endif

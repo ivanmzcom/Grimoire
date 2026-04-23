@@ -167,6 +167,7 @@ struct GameListsColumnView: View {
 enum GameLibraryDetailRoute: Hashable {
     case game(PersistentIdentifier)
     case list(PersistentIdentifier)
+    case tag(PersistentIdentifier)
 }
 
 struct GameListDetailView: View {
@@ -256,6 +257,20 @@ struct GameListDetailView: View {
                     description: Text("Esta lista ya no está disponible.")
                 )
             }
+        case .tag(let tagID):
+            if let tag = tag(for: tagID) {
+                GameTagDetailContentView(
+                    tag: tag,
+                    games: games(for: tag),
+                    onOpenGame: open
+                )
+            } else {
+                ContentUnavailableView(
+                    "Etiqueta no disponible",
+                    systemImage: "tag",
+                    description: Text("Esta etiqueta ya no está disponible.")
+                )
+            }
         }
     }
 
@@ -265,6 +280,24 @@ struct GameListDetailView: View {
 
     private func open(_ list: GameList) {
         navigationPath.append(.list(list.persistentModelID))
+    }
+
+    private func tag(for id: PersistentIdentifier) -> GameTag? {
+        for game in allGames {
+            if let tag = game.sortedTags.first(where: { $0.persistentModelID == id }) {
+                return tag
+            }
+        }
+
+        return nil
+    }
+
+    private func games(for tag: GameTag) -> [Game] {
+        allGames
+            .filter { $0.hasTag(tag) }
+            .sorted { lhs, rhs in
+                lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+            }
     }
 }
 
@@ -684,6 +717,164 @@ private struct GameListGridCard: View {
         Button(role: .destructive, action: onRemove) {
             Label("Quitar de la lista", systemImage: "minus.circle")
         }
+    }
+}
+
+struct GameTagDetailContentView: View {
+    let tag: GameTag
+    let games: [Game]
+    var onOpenGame: (Game) -> Void
+
+    private var columns: [GridItem] {
+        [
+            GridItem(.adaptive(minimum: 132, maximum: 168), spacing: 28, alignment: .top)
+        ]
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                header
+
+                if games.isEmpty {
+                    emptyState
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        gridHeader
+
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: 24) {
+                            ForEach(games) { game in
+                                GameTagGridCard(game: game) {
+                                    onOpenGame(game)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, detailHorizontalPadding)
+            .padding(.vertical, 26)
+            .frame(maxWidth: 980, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .navigationTitle(tag.name)
+    }
+
+    private var detailHorizontalPadding: CGFloat {
+#if os(macOS)
+        32
+#else
+        20
+#endif
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(tag.name)
+                    .font(.title.weight(.semibold))
+                    .textSelection(.enabled)
+                    .lineLimit(2)
+
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 0) {
+                GameListHeaderMetric(value: "\(games.count)", label: games.count == 1 ? "juego" : "juegos")
+
+                Divider()
+                    .frame(height: 28)
+                    .padding(.horizontal, 14)
+
+                Text("Etiqueta importada desde IGDB")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.bottom, 8)
+    }
+
+    private var gridHeader: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text("Contenido")
+                .font(.subheadline.weight(.semibold))
+
+            Text("Orden alfabético")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Spacer()
+        }
+    }
+
+    private var emptyState: some View {
+        ContentUnavailableView(
+            "Sin juegos",
+            systemImage: "tag",
+            description: Text("No hay juegos asociados a esta etiqueta.")
+        )
+        .frame(maxWidth: .infinity, minHeight: 320)
+    }
+}
+
+private struct GameTagGridCard: View {
+    let game: Game
+    let onOpen: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        VStack(spacing: 9) {
+            GameCoverArtwork(
+                title: game.title,
+                coverURL: game.coverURL,
+                size: CGSize(width: 104, height: 148),
+                cornerRadius: 14
+            )
+            .scaleEffect(isHovering ? 1.015 : 1)
+            .shadow(color: .black.opacity(isHovering ? 0.10 : 0.045), radius: isHovering ? 9 : 5, y: 4)
+
+            VStack(spacing: 3) {
+                Text(game.title)
+                    .font(.callout.weight(.semibold))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(game.platformSummary)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+
+                if !game.detailSummary.isEmpty {
+                    Text(game.detailSummary)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 12)
+        .frame(minHeight: 228, alignment: .top)
+        .frame(maxWidth: .infinity)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(isHovering ? Color.accentColor.opacity(0.10) : Color.clear)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onTapGesture(perform: onOpen)
+        .onHover { isHovering = $0 }
+        .animation(.snappy(duration: 0.16), value: isHovering)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(game.title)
+        .accessibilityHint("Abre la ficha del juego.")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction(named: "Abrir", onOpen)
     }
 }
 
