@@ -59,25 +59,33 @@ struct GameFormView: View {
 
             footer
         }
-        .frame(minWidth: 820, idealWidth: 900, minHeight: 620, idealHeight: 700)
+        .frame(minWidth: 860, idealWidth: 940, minHeight: 640, idealHeight: 720)
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 16) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Nuevo juego")
-                    .font(.title3.weight(.semibold))
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: "plus.square.on.square")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
 
-                Text("Busca el juego en IGDB y crea la ficha automáticamente.")
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("Nuevo juego")
+                        .font(.title3.weight(.semibold))
+
+                    Text(resultsCountLabel)
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+
+                Text(headerSubtitle)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
             }
 
             Spacer(minLength: 20)
-
-            Text(resultsCountLabel)
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 24)
@@ -98,7 +106,19 @@ struct GameFormView: View {
     }
 
     private var searchBarSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Label("Buscar en IGDB", systemImage: "magnifyingglass")
+                    .font(.headline)
+
+                if !activeSearchText.isEmpty {
+                    Text(activeSearchText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
             if !credentials.isComplete {
                 Label("Faltan credenciales de IGDB en `JuegosApp/Secrets.plist`.", systemImage: "key.fill")
                     .font(.caption)
@@ -109,6 +129,7 @@ struct GameFormView: View {
             HStack(spacing: 12) {
                 TextField("Buscar en IGDB", text: $searchText)
                     .textFieldStyle(.roundedBorder)
+                    .font(.body)
                     .onSubmit {
                         startSearch()
                     }
@@ -120,6 +141,7 @@ struct GameFormView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!canSearch)
+                .keyboardShortcut(.defaultAction)
 
                 if isSearching {
                     ProgressView()
@@ -127,6 +149,10 @@ struct GameFormView: View {
                         .accessibilityLabel("Buscando en IGDB")
                 }
             }
+
+            Text(searchHintText)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
@@ -140,8 +166,16 @@ struct GameFormView: View {
 
                 Spacer()
 
-                if hasMoreResults {
-                    Text("Desplázate para cargar más")
+                if isLoadingMore {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Cargando más")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else if hasMoreResults {
+                    Text("Más resultados disponibles")
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -173,6 +207,7 @@ struct GameFormView: View {
                                     createGame(from: result)
                                 }
                                 .buttonStyle(.borderedProminent)
+                                .controlSize(.regular)
                             } else {
                                 Label("Ya existe", systemImage: "checkmark.circle.fill")
                                     .font(.caption.weight(.semibold))
@@ -222,6 +257,7 @@ struct GameFormView: View {
             Button("Cancelar") {
                 dismiss()
             }
+            .keyboardShortcut(.cancelAction)
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 14)
@@ -337,12 +373,44 @@ struct GameFormView: View {
             || message == "Ese juego ya existe en tu biblioteca."
     }
 
+    private var trimmedSearchText: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private var resultsCountLabel: String {
         if results.isEmpty {
             return didSearch ? "Sin resultados" : "IGDB"
         }
 
         return results.count == 1 ? "1 resultado" : "\(results.count) resultados"
+    }
+
+    private var headerSubtitle: String {
+        if !credentials.isComplete {
+            return "Faltan las credenciales locales de IGDB para poder buscar y crear juegos."
+        }
+
+        if isSearching {
+            return "Buscando coincidencias en IGDB…"
+        }
+
+        if !activeSearchText.isEmpty {
+            return "Elige el resultado correcto para crear la ficha de “\(activeSearchText)”."
+        }
+
+        return "Busca el juego en IGDB y crea la ficha automáticamente."
+    }
+
+    private var searchHintText: String {
+        if !credentials.isComplete {
+            return "La búsqueda se activa cuando `JuegosApp/Secrets.plist` contiene `IGDBClientID` e `IGDBClientSecret`."
+        }
+
+        if didSearch && results.isEmpty {
+            return "Prueba con el título principal del juego o con una variante menos específica."
+        }
+
+        return "Busca por título principal. Los resultados se crean directamente desde los metadatos de IGDB."
     }
 
     private func startSearch() {
@@ -505,6 +573,8 @@ private struct IGDBSearchResultRow: View {
                 .foregroundStyle(.tertiary)
                 .lineLimit(2)
             }
+
+            Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -530,7 +600,7 @@ private struct MacResultsPlaceholder: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: 320, alignment: .topLeading)
     }
 
     private var placeholderText: String {
