@@ -12,7 +12,7 @@ import SwiftData
 struct JuegosAppApp: App {
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
-            Item.self,
+            Game.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
@@ -27,6 +27,21 @@ struct JuegosAppApp: App {
         WindowGroup {
             ContentView()
         }
+#if os(macOS)
+        .defaultSize(width: 1280, height: 820)
+#endif
         .modelContainer(sharedModelContainer)
+#if os(macOS)
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("Nuevo juego") {
+                    NotificationCenter.default.post(name: .openNewGame, object: nil)
+                }
+                .keyboardShortcut("n")
+            }
+
+            SidebarCommands()
+        }
+#endif
     }
 }
