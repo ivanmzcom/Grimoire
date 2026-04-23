@@ -17,11 +17,9 @@ struct GameFormView: View {
     @Environment(\.modelContext) private var modelContext
 
     @State private var title = ""
-    @State private var genre = GameCatalog.genres[0]
     @State private var releaseYearText = ""
     @State private var platform = GameCatalog.platforms[0]
     @State private var format = GameCatalog.formats[0]
-    @State private var status = GameCatalog.statuses[0]
     @State private var copyNotes = ""
     @FocusState private var focusedField: Field?
 
@@ -41,7 +39,7 @@ struct GameFormView: View {
 
     private var notesPreview: String {
         cleanedCopyNotes.isEmpty
-            ? "Añade estado, edición, procedencia o cualquier detalle útil de esta copia."
+            ? "Añade edición, procedencia o cualquier detalle útil de esta copia."
             : cleanedCopyNotes
     }
 
@@ -81,16 +79,6 @@ struct GameFormView: View {
                                 .frame(maxWidth: 320, alignment: .leading)
                         }
 
-                        MacSheetRow(label: "Genero") {
-                            Picker("", selection: $genre) {
-                                ForEach(GameCatalog.genres, id: \.self) { option in
-                                    Text(option).tag(option)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 180, alignment: .leading)
-                        }
-
                         MacSheetRow(label: "Ano") {
                             TextField("2024", text: $releaseYearText)
                                 .textFieldStyle(.roundedBorder)
@@ -112,16 +100,6 @@ struct GameFormView: View {
                         MacSheetRow(label: "Formato") {
                             Picker("", selection: $format) {
                                 ForEach(GameCatalog.formats, id: \.self) { option in
-                                    Text(option).tag(option)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 180, alignment: .leading)
-                        }
-
-                        MacSheetRow(label: "Estado") {
-                            Picker("", selection: $status) {
-                                ForEach(GameCatalog.statuses, id: \.self) { option in
                                     Text(option).tag(option)
                                 }
                             }
@@ -183,12 +161,6 @@ struct GameFormView: View {
                 Section("Juego") {
                     TextField("Titulo", text: $title)
 
-                    Picker("Genero", selection: $genre) {
-                        ForEach(GameCatalog.genres, id: \.self) { option in
-                            Text(option).tag(option)
-                        }
-                    }
-
                     TextField("Ano de lanzamiento", text: $releaseYearText)
                         .keyboardType(.numberPad)
                 }
@@ -202,12 +174,6 @@ struct GameFormView: View {
 
                     Picker("Formato", selection: $format) {
                         ForEach(GameCatalog.formats, id: \.self) { option in
-                            Text(option).tag(option)
-                        }
-                    }
-
-                    Picker("Estado", selection: $status) {
-                        ForEach(GameCatalog.statuses, id: \.self) { option in
                             Text(option).tag(option)
                         }
                     }
@@ -240,13 +206,11 @@ struct GameFormView: View {
     private func saveGame() {
         let game = Game(
             title: cleanedTitle,
-            genre: genre,
             releaseYear: releaseYear
         )
         let firstCopy = GameCopy(
             platform: platform,
             format: format,
-            status: status,
             notes: cleanedCopyNotes
         )
 
@@ -260,7 +224,7 @@ struct GameFormView: View {
 
 #Preview {
     GameFormView()
-        .modelContainer(for: [Game.self, GameCopy.self], inMemory: true)
+        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self], inMemory: true)
 }
 
 #if os(macOS)

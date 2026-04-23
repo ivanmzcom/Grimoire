@@ -11,19 +11,16 @@ import SwiftData
 @Model
 final class Game {
     var title: String
-    var genre: String
     var releaseYear: Int?
     var createdAt: Date
     @Relationship(deleteRule: .cascade, inverse: \GameCopy.game) var copies: [GameCopy] = []
 
     init(
         title: String,
-        genre: String,
         releaseYear: Int? = nil,
         createdAt: Date = .now
     ) {
         self.title = title
-        self.genre = genre
         self.releaseYear = releaseYear
         self.createdAt = createdAt
     }
@@ -50,9 +47,32 @@ final class Game {
         joinedSummary(for: sortedCopies.map(\.format), fallback: "Sin formato")
     }
 
+    var playthroughCount: Int {
+        sortedCopies.reduce(into: 0) { partialResult, copy in
+            partialResult += copy.playthroughCount
+        }
+    }
+
+    var playthroughCountLabel: String {
+        playthroughCount == 1 ? "1 partida" : "\(playthroughCount) partidas"
+    }
+
+    var statusSummary: String {
+        joinedSummary(
+            for: sortedCopies.flatMap { copy in
+                if copy.sortedPlaythroughs.isEmpty && !copy.status.isEmpty {
+                    return [copy.status]
+                }
+
+                return copy.sortedPlaythroughs.map(\.status)
+            },
+            fallback: "Sin partidas"
+        )
+    }
+
     var searchableCopyText: String {
         sortedCopies
-            .flatMap { [$0.platform, $0.format, $0.status, $0.notes] }
+            .map(\.searchableText)
             .joined(separator: " ")
     }
 
@@ -61,13 +81,17 @@ final class Game {
     }
 
     var detailSummary: String {
-        var pieces = [genre]
+        var pieces = [String]()
 
         if let releaseYear {
             pieces.append(String(releaseYear))
         }
 
         pieces.append(copyCount == 1 ? "1 copia" : "\(copyCount) copias")
+
+        if playthroughCount > 0 {
+            pieces.append(playthroughCountLabel)
+        }
 
         return pieces
             .filter { !$0.isEmpty }
@@ -79,19 +103,15 @@ final class Game {
     }
 
     var libraryFootnote: String {
-        guard let primaryCopy else {
-            return genre
+        if playthroughCount == 0 {
+            return "\(formatSummary) · Sin partidas"
         }
 
-        let copySummary = [primaryCopy.format, primaryCopy.status]
-            .filter { !$0.isEmpty }
-            .joined(separator: " · ")
-
-        if copyCount == 1 {
-            return primaryCopy.notes.isEmpty ? copySummary : copySummary + " · " + primaryCopy.notes
+        if playthroughCount == 1 {
+            return "\(formatSummary) · \(statusSummary)"
         }
 
-        return "\(copyCount) copias · \(formatSummary)"
+        return "\(playthroughCountLabel) · \(statusSummary)"
     }
 
     private func joinedSummary(for values: [String], fallback: String) -> String {
@@ -109,20 +129,88 @@ final class Game {
 final class GameCopy {
     var platform: String
     var format: String
-    var status: String
     var notes: String
     var createdAt: Date
+    // Legacy field kept temporarily to migrate existing copy statuses into playthroughs.
+    var status: String
     var game: Game?
+    @Relationship(deleteRule: .cascade, inverse: \GamePlaythrough.copy) var playthroughs: [GamePlaythrough] = []
 
     init(
         platform: String,
         format: String,
+        notes: String = "",
+        createdAt: Date = .now,
+        status: String = ""
+    ) {
+        self.platform = platform
+        self.format = format
+        self.notes = notes
+        self.createdAt = createdAt
+        self.status = status
+    }
+
+    var sortedPlaythroughs: [GamePlaythrough] {
+        playthroughs.sorted { lhs, rhs in
+            if lhs.createdAt == rhs.createdAt {
+                return lhs.status < rhs.status
+            }
+
+            return lhs.createdAt < rhs.createdAt
+        }
+    }
+
+    var playthroughCount: Int {
+        if sortedPlaythroughs.isEmpty && !status.isEmpty {
+            return 1
+        }
+
+        return sortedPlaythroughs.count
+    }
+
+    var playthroughCountLabel: String {
+        playthroughCount == 1 ? "1 partida" : "\(playthroughCount) partidas"
+    }
+
+    var statusSummary: String {
+        var statuses = [String]()
+
+        for status in sortedPlaythroughs.map(\.status) where !statuses.contains(status) {
+            statuses.append(status)
+        }
+
+        if statuses.isEmpty {
+            return status.isEmpty ? "Sin partidas" : status
+        }
+
+        return statuses.joined(separator: ", ")
+    }
+
+    var searchableText: String {
+        (
+            [platform, format, notes, status]
+            + sortedPlaythroughs.flatMap { [$0.status, $0.notes] }
+        )
+        .joined(separator: " ")
+    }
+
+    var needsLegacyPlaythroughMigration: Bool {
+        playthroughs.isEmpty && !status.isEmpty
+    }
+}
+
+@Model
+final class GamePlaythrough {
+    var status: String
+    var notes: String = ""
+    var createdAt: Date
+    var copy: GameCopy?
+
+    init(
         status: String,
         notes: String = "",
         createdAt: Date = .now
     ) {
-        self.platform = platform
-        self.format = format
         self.status = status
         self.notes = notes
         self.createdAt = createdAt
@@ -156,16 +244,4 @@ enum GameCatalog {
         "Archivado"
     ]
 
-    static let genres = [
-        "Accion",
-        "Aventura",
-        "RPG",
-        "Estrategia",
-        "Deportes",
-        "Carreras",
-        "Plataformas",
-        "Shooter",
-        "Puzzle",
-        "Otro"
-    ]
 }

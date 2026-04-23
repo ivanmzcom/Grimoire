@@ -14,6 +14,7 @@ struct JuegosAppApp: App {
         let schema = Schema([
             Game.self,
             GameCopy.self,
+            GamePlaythrough.self,
         ])
         let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 

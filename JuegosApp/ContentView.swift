@@ -22,6 +22,10 @@ struct ContentView: View {
     @State private var navigationPath = [PersistentIdentifier]()
     @State private var showingAddSheet = false
     @State private var copyHostGame: Game?
+    @State private var playthroughHostCopy: GameCopy?
+    @State private var gameToEdit: Game?
+    @State private var copyToEdit: GameCopy?
+    @State private var playthroughToEdit: GamePlaythrough?
 
     private var platformOptions: [String] {
         ["Todas"] + GameCatalog.platforms
@@ -33,7 +37,6 @@ struct ContentView: View {
                 || game.sortedCopies.contains(where: { $0.platform == selectedPlatform })
             let matchesSearch = searchText.isEmpty
                 || game.title.localizedCaseInsensitiveContains(searchText)
-                || game.genre.localizedCaseInsensitiveContains(searchText)
                 || game.searchableCopyText.localizedCaseInsensitiveContains(searchText)
             return matchesPlatform && matchesSearch
         }
@@ -52,7 +55,11 @@ struct ContentView: View {
                 showingAddSheet: $showingAddSheet,
                 platformOptions: platformOptions,
                 onDeleteSelected: deleteSelectedGame,
-                onAddCopy: openCopySheet
+                onAddCopy: openCopySheet,
+                onAddPlaythrough: openPlaythroughSheet,
+                onEditGame: openGameEditSheet,
+                onEditCopy: openCopyEditSheet,
+                onEditPlaythrough: openPlaythroughEditSheet
             )
 #else
             IOSLibraryView(
@@ -64,7 +71,11 @@ struct ContentView: View {
                 showingAddSheet: $showingAddSheet,
                 platformOptions: platformOptions,
                 onDelete: deleteGames,
-                onAddCopy: openCopySheet
+                onAddCopy: openCopySheet,
+                onAddPlaythrough: openPlaythroughSheet,
+                onEditGame: openGameEditSheet,
+                onEditCopy: openCopyEditSheet,
+                onEditPlaythrough: openPlaythroughEditSheet
             )
 #endif
         }
@@ -74,11 +85,27 @@ struct ContentView: View {
         .sheet(item: $copyHostGame) { game in
             GameCopyFormView(game: game)
         }
+        .sheet(item: $playthroughHostCopy) { copy in
+            GamePlaythroughFormView(copy: copy)
+        }
+        .sheet(item: $gameToEdit) { game in
+            GameEditFormView(game: game)
+        }
+        .sheet(item: $copyToEdit) { copy in
+            GameCopyEditFormView(copy: copy)
+        }
+        .sheet(item: $playthroughToEdit) { playthrough in
+            GamePlaythroughEditFormView(playthrough: playthrough)
+        }
         .onAppear {
+            migrateLegacyPlaythroughsIfNeeded()
             syncSelection()
         }
         .onReceive(NotificationCenter.default.publisher(for: .openNewGame)) { _ in
             showingAddSheet = true
+        }
+        .onChange(of: games.map(\.persistentModelID)) {
+            migrateLegacyPlaythroughsIfNeeded()
         }
         .onChange(of: filteredGames.map(\.persistentModelID)) {
             syncSelection()
@@ -109,6 +136,47 @@ struct ContentView: View {
 
     private func openCopySheet(for game: Game) {
         copyHostGame = game
+    }
+
+    private func openPlaythroughSheet(for copy: GameCopy) {
+        playthroughHostCopy = copy
+    }
+
+    private func openGameEditSheet(for game: Game) {
+        gameToEdit = game
+    }
+
+    private func openCopyEditSheet(for copy: GameCopy) {
+        copyToEdit = copy
+    }
+
+    private func openPlaythroughEditSheet(for playthrough: GamePlaythrough) {
+        playthroughToEdit = playthrough
+    }
+
+    private func migrateLegacyPlaythroughsIfNeeded() {
+        var didInsertPlaythrough = false
+
+        for game in games {
+            for copy in game.sortedCopies where copy.needsLegacyPlaythroughMigration {
+                let playthrough = GamePlaythrough(
+                    status: copy.status,
+                    createdAt: copy.createdAt
+                )
+                copy.playthroughs.append(playthrough)
+                copy.status = ""
+                modelContext.insert(playthrough)
+                didInsertPlaythrough = true
+            }
+        }
+
+        guard didInsertPlaythrough else { return }
+
+        do {
+            try modelContext.save()
+        } catch {
+            assertionFailure("Could not migrate legacy copy statuses into playthroughs: \(error)")
+        }
     }
 
     private func syncSelection() {
@@ -143,6 +211,10 @@ private struct MacLibraryView: View {
     let platformOptions: [String]
     let onDeleteSelected: () -> Void
     let onAddCopy: (Game) -> Void
+    let onAddPlaythrough: (GameCopy) -> Void
+    let onEditGame: (Game) -> Void
+    let onEditCopy: (GameCopy) -> Void
+    let onEditPlaythrough: (GamePlaythrough) -> Void
 
     private var availablePlatforms: [String] {
         Array(platformOptions.dropFirst())
@@ -210,15 +282,24 @@ private struct MacLibraryView: View {
             .navigationSplitViewColumnWidth(min: 280, ideal: 340, max: 380)
         } detail: {
             if let selectedGame {
-                GameDetailView(game: selectedGame) {
-                    onAddCopy(selectedGame)
-                }
+                GameDetailView(
+                    game: selectedGame,
+                    onAddCopy: {
+                        onAddCopy(selectedGame)
+                    },
+                    onAddPlaythrough: onAddPlaythrough,
+                    onEditGame: {
+                        onEditGame(selectedGame)
+                    },
+                    onEditCopy: onEditCopy,
+                    onEditPlaythrough: onEditPlaythrough
+                )
             } else {
                 GameSelectionPlaceholderView()
             }
         }
         .navigationSplitViewStyle(.balanced)
-        .searchable(text: $searchText, prompt: "Buscar por titulo, plataforma, estado o genero")
+        .searchable(text: $searchText, prompt: "Buscar por titulo, plataforma o estado")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -259,6 +340,10 @@ private struct IOSLibraryView: View {
     let platformOptions: [String]
     let onDelete: (IndexSet) -> Void
     let onAddCopy: (Game) -> Void
+    let onAddPlaythrough: (GameCopy) -> Void
+    let onEditGame: (Game) -> Void
+    let onEditCopy: (GameCopy) -> Void
+    let onEditPlaythrough: (GamePlaythrough) -> Void
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -295,7 +380,7 @@ private struct IOSLibraryView: View {
             }
             .navigationTitle("Juegos")
             .navigationBarTitleDisplayMode(.large)
-            .searchable(text: $searchText, prompt: "Buscar por titulo, plataforma, estado o genero")
+            .searchable(text: $searchText, prompt: "Buscar por titulo, plataforma o estado")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -307,9 +392,18 @@ private struct IOSLibraryView: View {
             }
             .navigationDestination(for: PersistentIdentifier.self) { identifier in
                 if let game = games.first(where: { $0.persistentModelID == identifier }) {
-                    GameDetailView(game: game) {
-                        onAddCopy(game)
-                    }
+                    GameDetailView(
+                        game: game,
+                        onAddCopy: {
+                            onAddCopy(game)
+                        },
+                        onAddPlaythrough: onAddPlaythrough,
+                        onEditGame: {
+                            onEditGame(game)
+                        },
+                        onEditCopy: onEditCopy,
+                        onEditPlaythrough: onEditPlaythrough
+                    )
                         .navigationBarTitleDisplayMode(.inline)
                 } else {
                     GameEmptyStateView(searchText: searchText, selectedPlatform: selectedPlatform)
@@ -322,5 +416,5 @@ private struct IOSLibraryView: View {
 
 #Preview {
     ContentView()
-        .modelContainer(for: [Game.self, GameCopy.self], inMemory: true)
+        .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self], inMemory: true)
 }
