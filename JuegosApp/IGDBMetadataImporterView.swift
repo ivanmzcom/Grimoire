@@ -10,6 +10,7 @@ import SwiftUI
 
 struct IGDBMetadataImporterView: View {
     private let pageSize = 12
+    private let credentials = IGDBCredentialsStore.load()
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -17,8 +18,6 @@ struct IGDBMetadataImporterView: View {
     let game: Game
 
     @State private var searchText: String
-    @State private var clientID: String
-    @State private var clientSecret: String
     @State private var results = [IGDBGameMetadata]()
     @State private var isSearching = false
     @State private var isLoadingMore = false
@@ -30,15 +29,7 @@ struct IGDBMetadataImporterView: View {
 
     init(game: Game) {
         self.game = game
-
-        let credentials = IGDBCredentialsStore.load()
         _searchText = State(initialValue: game.title)
-        _clientID = State(initialValue: credentials.clientID)
-        _clientSecret = State(initialValue: credentials.clientSecret)
-    }
-
-    private var credentials: IGDBCredentials {
-        IGDBCredentials(clientID: clientID, clientSecret: clientSecret)
     }
 
     private var canSearch: Bool {
@@ -52,7 +43,6 @@ struct IGDBMetadataImporterView: View {
     var body: some View {
         NavigationStack {
             List {
-                credentialsSection
                 searchSection
                 resultsSection
             }
@@ -73,25 +63,15 @@ struct IGDBMetadataImporterView: View {
 #endif
     }
 
-    private var credentialsSection: some View {
-        Section("Credenciales") {
-            TextField("Client ID", text: $clientID)
-#if os(iOS)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-#endif
-
-            SecureField("Client Secret", text: $clientSecret)
-
-            Button("Guardar credenciales") {
-                saveCredentials()
-            }
-            .disabled(!credentials.isComplete)
-        }
-    }
-
     private var searchSection: some View {
         Section("Búsqueda") {
+            if !credentials.isComplete {
+                Text("Añade `JuegosApp/Secrets.plist` con `IGDBClientID` e `IGDBClientSecret` para activar la búsqueda.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             TextField("Nombre del juego", text: $searchText)
 #if os(iOS)
                 .textInputAutocapitalization(.words)
@@ -165,15 +145,6 @@ struct IGDBMetadataImporterView: View {
         }
     }
 
-    private func saveCredentials() {
-        do {
-            try IGDBCredentialsStore.save(credentials)
-            message = "Credenciales guardadas."
-        } catch {
-            message = error.localizedDescription
-        }
-    }
-
     private func startSearch() {
         guard canSearch else {
             message = IGDBMetadataError.missingCredentials.localizedDescription
@@ -197,7 +168,6 @@ struct IGDBMetadataImporterView: View {
         activeSearchText = query
 
         do {
-            try IGDBCredentialsStore.save(credentials)
             let page = try await IGDBMetadataService(credentials: credentials).searchGames(
                 matching: query,
                 limit: pageSize,
@@ -316,70 +286,23 @@ private struct IGDBMetadataResultRow: View {
 
 #if os(macOS)
 struct IGDBSettingsView: View {
-    @State private var clientID: String
-    @State private var clientSecret: String
-    @State private var message: String?
-
-    init() {
-        let credentials = IGDBCredentialsStore.load()
-        _clientID = State(initialValue: credentials.clientID)
-        _clientSecret = State(initialValue: credentials.clientSecret)
-    }
-
-    private var credentials: IGDBCredentials {
-        IGDBCredentials(clientID: clientID, clientSecret: clientSecret)
-    }
+    private let credentials = IGDBCredentialsStore.load()
 
     var body: some View {
         Form {
             Section("Credenciales") {
-                TextField("Client ID", text: $clientID)
-                    .textFieldStyle(.roundedBorder)
+                LabeledContent("Archivo", value: "JuegosApp/Secrets.plist")
+                LabeledContent("IGDBClientID", value: credentials.clientID.isEmpty ? "No configurado" : "Configurado")
+                LabeledContent("IGDBClientSecret", value: credentials.clientSecret.isEmpty ? "No configurado" : "Configurado")
+            }
 
-                SecureField("Client Secret", text: $clientSecret)
-                    .textFieldStyle(.roundedBorder)
-
-                HStack {
-                    Button("Guardar") {
-                        save()
-                    }
-                    .disabled(!credentials.isComplete)
-
-                    Button("Borrar", role: .destructive) {
-                        clear()
-                    }
-
-                    Spacer()
-
-                    if let message {
-                        Text(message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
+            Section("Formato") {
+                Text("Copia `Secrets.plist.example` a `JuegosApp/Secrets.plist` y rellena `IGDBClientID` y `IGDBClientSecret`.")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
-    }
-
-    private func save() {
-        do {
-            try IGDBCredentialsStore.save(credentials)
-            message = "Guardado"
-        } catch {
-            message = error.localizedDescription
-        }
-    }
-
-    private func clear() {
-        do {
-            try IGDBCredentialsStore.clear()
-            clientID = ""
-            clientSecret = ""
-            message = "Borrado"
-        } catch {
-            message = error.localizedDescription
-        }
     }
 }
 #endif

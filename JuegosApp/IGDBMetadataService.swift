@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import Security
 
 struct IGDBCredentials: Equatable {
     var clientID: String
@@ -19,30 +18,24 @@ struct IGDBCredentials: Equatable {
 }
 
 enum IGDBCredentialsStore {
-    private static let clientIDKey = "igdb.clientID"
-    private static let keychainService = "com.ivanmz.JuegosApp.igdb"
-    private static let keychainAccount = "clientSecret"
+    private static let secretsFileName = "Secrets"
+    private static let secretsFileExtension = "plist"
+    private static let clientIDKey = "IGDBClientID"
+    private static let clientSecretKey = "IGDBClientSecret"
 
     static func load() -> IGDBCredentials {
-        IGDBCredentials(
-            clientID: UserDefaults.standard.string(forKey: clientIDKey) ?? "",
-            clientSecret: (try? KeychainPasswordStore.password(service: keychainService, account: keychainAccount)) ?? ""
+        guard let url = Bundle.main.url(forResource: secretsFileName, withExtension: secretsFileExtension),
+              let data = try? Data(contentsOf: url),
+              let rawSecrets = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+              let secrets = rawSecrets as? [String: Any]
+        else {
+            return IGDBCredentials(clientID: "", clientSecret: "")
+        }
+
+        return IGDBCredentials(
+            clientID: (secrets[clientIDKey] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+            clientSecret: (secrets[clientSecretKey] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         )
-    }
-
-    static func save(_ credentials: IGDBCredentials) throws {
-        let clientID = credentials.clientID.trimmingCharacters(in: .whitespacesAndNewlines)
-        let clientSecret = credentials.clientSecret.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        UserDefaults.standard.set(clientID, forKey: clientIDKey)
-        try KeychainPasswordStore.save(clientSecret, service: keychainService, account: keychainAccount)
-        IGDBTokenCache.clear()
-    }
-
-    static func clear() throws {
-        UserDefaults.standard.removeObject(forKey: clientIDKey)
-        try KeychainPasswordStore.delete(service: keychainService, account: keychainAccount)
-        IGDBTokenCache.clear()
     }
 }
 
@@ -55,7 +48,7 @@ enum IGDBMetadataError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingCredentials:
-            "Configura el Client ID y Client Secret de IGDB."
+            "Configura IGDBClientID e IGDBClientSecret en Secrets.plist."
         case .invalidAuthResponse:
             "IGDB no devolvió un token válido."
         case .requestFailed(let message):
@@ -320,56 +313,6 @@ private enum IGDBTokenCache {
         let value: String
         let clientID: String
         let expiresAt: Date
-    }
-}
-
-private enum KeychainPasswordStore {
-    static func password(service: String, account: String) throws -> String? {
-        var query = baseQuery(service: service, account: account)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: AnyObject?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-
-        if status == errSecItemNotFound {
-            return nil
-        }
-
-        guard status == errSecSuccess,
-              let data = result as? Data
-        else {
-            throw IGDBMetadataError.invalidResponse
-        }
-
-        return String(data: data, encoding: .utf8)
-    }
-
-    static func save(_ password: String, service: String, account: String) throws {
-        try delete(service: service, account: account)
-
-        var query = baseQuery(service: service, account: account)
-        query[kSecValueData as String] = Data(password.utf8)
-
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw IGDBMetadataError.invalidResponse
-        }
-    }
-
-    static func delete(service: String, account: String) throws {
-        let status = SecItemDelete(baseQuery(service: service, account: account) as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw IGDBMetadataError.invalidResponse
-        }
-    }
-
-    private static func baseQuery(service: String, account: String) -> [String: Any] {
-        [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
     }
 }
 

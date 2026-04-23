@@ -36,3 +36,6 @@ fastlane/test_output/
 *.swp
 *.swo
 *~
+
+# Local app secrets
+/JuegosApp/Secrets.plist
