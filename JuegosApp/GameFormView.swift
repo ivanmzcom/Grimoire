@@ -5,54 +5,31 @@
 //  Created by Codex on 23/4/26.
 //
 
-import SwiftUI
 import SwiftData
+import SwiftUI
 
 struct GameFormView: View {
-    private enum Field {
-        case title
-    }
+    private let pageSize = 12
+    private let credentials = IGDBCredentialsStore.load()
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: [SortDescriptor(\Game.title)]) private var existingGames: [Game]
 
-    @State private var title = ""
-    @State private var releaseYearText = ""
+    @State private var searchText = ""
     @State private var platform = GameCatalog.platforms[0]
     @State private var format = GameCatalog.formats[0]
     @State private var copyNotes = ""
-    @State private var saveErrorMessage: String?
-    @FocusState private var focusedField: Field?
+    @State private var results = [IGDBGameMetadata]()
+    @State private var isSearching = false
+    @State private var isLoadingMore = false
+    @State private var hasMoreResults = false
+    @State private var nextOffset = 0
+    @State private var activeSearchText = ""
+    @State private var didSearch = false
+    @State private var message: String?
 
-    private var cleanedTitle: String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var releaseYear: Int? {
-        let trimmed = releaseYearText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        return Int(trimmed)
-    }
-
-    private var releaseYearValidationMessage: String? {
-        let trimmed = releaseYearText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-
-        guard let year = Int(trimmed) else {
-            return "Introduce un año con números."
-        }
-
-        let maximumYear = Calendar.current.component(.year, from: .now) + 5
-        guard (1950...maximumYear).contains(year) else {
-            return "Introduce un año entre 1950 y \(maximumYear)."
-        }
-
-        return nil
-    }
-
-    private var canSave: Bool {
-        !cleanedTitle.isEmpty && releaseYearValidationMessage == nil
-    }
+    var onCreate: ((Game) -> Void)? = nil
 
     private var cleanedCopyNotes: String {
         copyNotes.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -62,6 +39,16 @@ struct GameFormView: View {
         cleanedCopyNotes.isEmpty
             ? "Añade edición, procedencia o cualquier detalle útil de esta copia."
             : cleanedCopyNotes
+    }
+
+    private var canSearch: Bool {
+        credentials.isComplete
+            && !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !isSearching
+    }
+
+    private var canLoadMore: Bool {
+        hasMoreResults && !isSearching && !isLoadingMore && !activeSearchText.isEmpty
     }
 
     var body: some View {
@@ -75,167 +62,64 @@ struct GameFormView: View {
 #if os(macOS)
     private var macForm: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Nuevo juego")
-                    .font(.title3.weight(.semibold))
-
-                Text("Crea la ficha del título y registra su primera copia.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.top, 18)
-            .padding(.bottom, 14)
+            header
 
             Divider()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    MacSheetSection(title: "Juego", help: "Información general del título que compartirán todas sus copias.") {
-                        MacSheetRow(label: "Título") {
-                            TextField("The Legend of Zelda", text: $title)
-                                .focused($focusedField, equals: .title)
-                                .textFieldStyle(.roundedBorder)
-                                .frame(maxWidth: 320, alignment: .leading)
-                        }
-
-                        MacSheetRow(label: "Año") {
-                            VStack(alignment: .leading, spacing: 4) {
-                                TextField("2024", text: $releaseYearText)
-                                    .textFieldStyle(.roundedBorder)
-                                    .frame(width: 100, alignment: .leading)
-
-                                if let releaseYearValidationMessage {
-                                    Text(releaseYearValidationMessage)
-                                        .font(.caption)
-                                        .foregroundStyle(.red)
-                                }
-                            }
-                        }
-                    }
-
-                    MacSheetSection(title: "Primera copia", help: "Datos de la unidad concreta que tienes en tu biblioteca.") {
-                        MacSheetRow(label: "Plataforma") {
-                            Picker("", selection: $platform) {
-                                ForEach(GameCatalog.platforms, id: \.self) { option in
-                                    Text(option).tag(option)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 220, alignment: .leading)
-                        }
-
-                        MacSheetRow(label: "Formato") {
-                            Picker("", selection: $format) {
-                                ForEach(GameCatalog.formats, id: \.self) { option in
-                                    Text(option).tag(option)
-                                }
-                            }
-                            .labelsHidden()
-                            .frame(width: 180, alignment: .leading)
-                        }
-                    }
-
-                    MacSheetSection(title: "Notas de la copia", help: "Observaciones opcionales sobre caja, disco, procedencia o edición.") {
-                        TextEditor(text: $copyNotes)
-                            .font(.body)
-                            .scrollContentBackground(.hidden)
-                            .padding(8)
-                            .frame(minHeight: 150)
-                            .background(Color(nsColor: .textBackgroundColor))
-                            .overlay {
-                                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                    .strokeBorder(.separator)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-
-                        Text(notesPreview)
-                            .font(.caption)
-                            .foregroundStyle(cleanedCopyNotes.isEmpty ? .tertiary : .secondary)
-                            .lineLimit(2)
-                    }
-                }
-                .padding(20)
+            List {
+                searchSection
+                copySection
+                resultsSection
             }
+            .listStyle(.inset)
 
             Divider()
 
-            if let saveErrorMessage {
-                Text(saveErrorMessage)
+            footer
+        }
+        .frame(minWidth: 720, idealWidth: 780, minHeight: 620, idealHeight: 680)
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Nuevo juego")
+                .font(.title3.weight(.semibold))
+
+            Text("Busca el juego en IGDB y crea la ficha junto con su primera copia.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
+    }
+
+    private var footer: some View {
+        HStack {
+            if let message {
+                Text(message)
                     .font(.caption)
-                    .foregroundStyle(.red)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
+                    .foregroundStyle(messageHasError ? .red : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack {
-                Spacer()
+            Spacer()
 
-                Button("Cancelar") {
-                    dismiss()
-                }
-
-                Button("Guardar") {
-                    saveGame()
-                }
-                .buttonStyle(.borderedProminent)
-                .keyboardShortcut(.defaultAction)
-                .disabled(!canSave)
+            Button("Cancelar") {
+                dismiss()
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 14)
         }
-        .frame(minWidth: 560, idealWidth: 620, minHeight: 520, idealHeight: 580)
-        .task {
-            focusedField = .title
-        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
     }
 #else
     private var iosForm: some View {
         NavigationStack {
-            Form {
-                Section("Juego") {
-                    TextField("Título", text: $title)
-                        .textInputAutocapitalization(.words)
-
-                    TextField("Año de lanzamiento", text: $releaseYearText)
-                        .keyboardType(.numberPad)
-
-                    if let releaseYearValidationMessage {
-                        Text(releaseYearValidationMessage)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                }
-
-                Section("Primera copia") {
-                    Picker("Plataforma", selection: $platform) {
-                        ForEach(GameCatalog.platforms, id: \.self) { option in
-                            Text(option).tag(option)
-                        }
-                    }
-
-                    Picker("Formato", selection: $format) {
-                        ForEach(GameCatalog.formats, id: \.self) { option in
-                            Text(option).tag(option)
-                        }
-                    }
-                }
-
-                Section("Notas de la copia") {
-                    TextField("Edición, estado de la caja, procedencia...", text: $copyNotes, axis: .vertical)
-                        .lineLimit(4, reservesSpace: true)
-                }
-
-                if let saveErrorMessage {
-                    Section {
-                        Text(saveErrorMessage)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                }
+            List {
+                searchSection
+                copySection
+                resultsSection
             }
             .navigationTitle("Nuevo juego")
             .toolbar {
@@ -244,23 +128,217 @@ struct GameFormView: View {
                         dismiss()
                     }
                 }
-
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Guardar") {
-                        saveGame()
-                    }
-                    .disabled(!canSave)
-                }
             }
         }
     }
 #endif
 
-    private func saveGame() {
+    private var searchSection: some View {
+        Section("Búsqueda") {
+            if !credentials.isComplete {
+                Text("Añade `JuegosApp/Secrets.plist` con `IGDBClientID` e `IGDBClientSecret` para activar la búsqueda.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            TextField("Nombre del juego", text: $searchText)
+#if os(iOS)
+                .textInputAutocapitalization(.words)
+#endif
+                .onSubmit {
+                    startSearch()
+                }
+
+            HStack {
+                Button {
+                    startSearch()
+                } label: {
+                    Label("Buscar en IGDB", systemImage: "magnifyingglass")
+                }
+                .disabled(!canSearch)
+
+                if isSearching {
+                    Spacer()
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Buscando en IGDB")
+                }
+            }
+        }
+    }
+
+    private var copySection: some View {
+        Section("Primera copia") {
+            Picker("Plataforma", selection: $platform) {
+                ForEach(GameCatalog.platforms, id: \.self) { option in
+                    Text(option).tag(option)
+                }
+            }
+
+            Picker("Formato", selection: $format) {
+                ForEach(GameCatalog.formats, id: \.self) { option in
+                    Text(option).tag(option)
+                }
+            }
+
+            TextField("Edición, estado de la caja, procedencia...", text: $copyNotes, axis: .vertical)
+                .lineLimit(4, reservesSpace: true)
+
+#if os(macOS)
+            Text(notesPreview)
+                .font(.caption)
+                .foregroundStyle(cleanedCopyNotes.isEmpty ? .tertiary : .secondary)
+                .lineLimit(2)
+#endif
+        }
+    }
+
+    @ViewBuilder
+    private var resultsSection: some View {
+        Section("Resultados") {
+            if results.isEmpty {
+                Text(didSearch ? "No se encontraron resultados." : "Busca un juego para crearlo desde IGDB.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(results) { result in
+                    let duplicateGame = existingGame(for: result)
+
+                    HStack(alignment: .center, spacing: 12) {
+                        IGDBSearchResultRow(metadata: result)
+
+                        Spacer(minLength: 12)
+
+                        if duplicateGame == nil {
+                            Button("Añadir") {
+                                createGame(from: result)
+                            }
+                            .buttonStyle(.borderedProminent)
+                        } else {
+                            Text("Ya existe")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .task {
+                        await loadMoreIfNeeded(currentResult: result)
+                    }
+                }
+
+                if isLoadingMore {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel("Cargando más resultados de IGDB")
+                        Spacer()
+                    }
+                } else if hasMoreResults {
+                    Button {
+                        Task {
+                            await loadMore()
+                        }
+                    } label: {
+                        Label("Cargar más resultados", systemImage: "arrow.down.circle")
+                    }
+                }
+            }
+        }
+    }
+
+    private var messageHasError: Bool {
+        message == IGDBMetadataError.missingCredentials.localizedDescription
+            || message == "No se pudo guardar el juego. Inténtalo de nuevo."
+            || message == "Ese juego ya existe en tu biblioteca."
+    }
+
+    private func startSearch() {
+        guard canSearch else {
+            message = IGDBMetadataError.missingCredentials.localizedDescription
+            return
+        }
+
+        Task {
+            await search()
+        }
+    }
+
+    @MainActor
+    private func search() async {
+        isSearching = true
+        didSearch = true
+        message = nil
+        hasMoreResults = false
+        nextOffset = 0
+
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        activeSearchText = query
+
+        do {
+            let page = try await IGDBMetadataService(credentials: credentials).searchGames(
+                matching: query,
+                limit: pageSize,
+                offset: 0
+            )
+            results = page
+            nextOffset = page.count
+            hasMoreResults = page.count == pageSize
+            message = results.isEmpty ? "Sin resultados para esta búsqueda." : nil
+        } catch {
+            results = []
+            activeSearchText = ""
+            message = error.localizedDescription
+        }
+
+        isSearching = false
+    }
+
+    @MainActor
+    private func loadMoreIfNeeded(currentResult: IGDBGameMetadata) async {
+        guard currentResult.id == results.last?.id else { return }
+        await loadMore()
+    }
+
+    @MainActor
+    private func loadMore() async {
+        guard canLoadMore else { return }
+
+        isLoadingMore = true
+        message = nil
+
+        do {
+            let page = try await IGDBMetadataService(credentials: credentials).searchGames(
+                matching: activeSearchText,
+                limit: pageSize,
+                offset: nextOffset
+            )
+            append(page)
+            nextOffset += page.count
+            hasMoreResults = page.count == pageSize
+        } catch {
+            message = error.localizedDescription
+        }
+
+        isLoadingMore = false
+    }
+
+    private func append(_ page: [IGDBGameMetadata]) {
+        let existingIDs = Set(results.map(\.id))
+        results.append(contentsOf: page.filter { !existingIDs.contains($0.id) })
+    }
+
+    private func createGame(from metadata: IGDBGameMetadata) {
+        guard existingGame(for: metadata) == nil else {
+            message = "Ese juego ya existe en tu biblioteca."
+            return
+        }
+
         let game = Game(
-            title: cleanedTitle,
-            releaseYear: releaseYear
+            title: metadata.name,
+            releaseYear: metadata.releaseYear
         )
+        game.applyIGDBMetadata(metadata)
+
         let firstCopy = GameCopy(
             platform: platform,
             format: format,
@@ -274,10 +352,71 @@ struct GameFormView: View {
 
         do {
             try modelContext.save()
+            onCreate?(game)
             dismiss()
         } catch {
-            saveErrorMessage = "No se pudo guardar el juego. Inténtalo de nuevo."
+            message = "No se pudo guardar el juego. Inténtalo de nuevo."
         }
+    }
+
+    private func existingGame(for metadata: IGDBGameMetadata) -> Game? {
+        if let game = existingGames.first(where: { $0.igdbID == metadata.id }) {
+            return game
+        }
+
+        return existingGames.first { game in
+            game.title.compare(
+                metadata.name,
+                options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+                range: nil,
+                locale: .current
+            ) == .orderedSame && game.releaseYear == metadata.releaseYear
+        }
+    }
+}
+
+private struct IGDBSearchResultRow: View {
+    let metadata: IGDBGameMetadata
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            GameCoverArtwork(
+                title: metadata.name,
+                coverURL: metadata.normalizedCoverURL,
+                size: CGSize(width: 48, height: 64),
+                cornerRadius: 8
+            )
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(metadata.name)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+
+                if !metadata.resultSubtitle.isEmpty {
+                    Text(metadata.resultSubtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                HStack(spacing: 8) {
+                    if let ratingLabel = metadata.ratingLabel {
+                        Label(ratingLabel, systemImage: "star.fill")
+                    }
+
+                    if !metadata.platformsText.isEmpty {
+                        Label(metadata.platformsText, systemImage: "gamecontroller")
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
+            }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -285,43 +424,3 @@ struct GameFormView: View {
     GameFormView()
         .modelContainer(for: [Game.self, GameCopy.self, GamePlaythrough.self], inMemory: true)
 }
-
-#if os(macOS)
-private struct MacSheetSection<Content: View>: View {
-    let title: String
-    let help: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-
-                Text(help)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            content
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct MacSheetRow<Content: View>: View {
-    let label: String
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 14) {
-            Text(label)
-                .foregroundStyle(.secondary)
-                .frame(width: 110, alignment: .trailing)
-
-            content
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-#endif

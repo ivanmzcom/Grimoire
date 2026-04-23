@@ -33,7 +33,6 @@ struct ContentView: View {
     @State private var showingListSheet = false
     @State private var copyHostGame: Game?
     @State private var playthroughHostCopy: GameCopy?
-    @State private var gameToEdit: Game?
     @State private var metadataImportGame: Game?
     @State private var copyToEdit: GameCopy?
     @State private var playthroughToEdit: GamePlaythrough?
@@ -131,7 +130,6 @@ struct ContentView: View {
                 onDeleteList: deleteList,
                 onAddCopy: openCopySheet,
                 onAddPlaythrough: openPlaythroughSheet,
-                onEditGame: openGameEditSheet,
                 onImportMetadata: openMetadataImporter,
                 onEditCopy: openCopyEditSheet,
                 onEditPlaythrough: openPlaythroughEditSheet
@@ -154,7 +152,6 @@ struct ContentView: View {
                 onDeleteList: deleteList,
                 onAddCopy: openCopySheet,
                 onAddPlaythrough: openPlaythroughSheet,
-                onEditGame: openGameEditSheet,
                 onImportMetadata: openMetadataImporter,
                 onEditCopy: openCopyEditSheet,
                 onEditPlaythrough: openPlaythroughEditSheet
@@ -162,7 +159,10 @@ struct ContentView: View {
 #endif
         }
         .sheet(isPresented: $showingAddSheet) {
-            GameFormView()
+            GameFormView { game in
+                selectedPlatform = LibrarySidebarItem.allGames
+                selectedGame = game
+            }
         }
         .sheet(isPresented: $showingListSheet) {
             GameListFormView(onSave: createGameList)
@@ -172,9 +172,6 @@ struct ContentView: View {
         }
         .sheet(item: $playthroughHostCopy) { copy in
             GamePlaythroughFormView(copy: copy)
-        }
-        .sheet(item: $gameToEdit) { game in
-            GameEditFormView(game: game)
         }
         .sheet(item: $metadataImportGame) { game in
             IGDBMetadataImporterView(game: game)
@@ -252,10 +249,6 @@ struct ContentView: View {
 
     private func openPlaythroughSheet(for copy: GameCopy) {
         playthroughHostCopy = copy
-    }
-
-    private func openGameEditSheet(for game: Game) {
-        gameToEdit = game
     }
 
     private func openMetadataImporter(for game: Game) {
@@ -381,7 +374,6 @@ private struct MacLibraryView: View {
     let onDeleteList: (GameList) -> Void
     let onAddCopy: (Game) -> Void
     let onAddPlaythrough: (GameCopy) -> Void
-    let onEditGame: (Game) -> Void
     let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
@@ -487,7 +479,6 @@ private struct MacLibraryView: View {
                         },
                         onAddCopy: onAddCopy,
                         onAddPlaythrough: onAddPlaythrough,
-                        onEditGame: onEditGame,
                         onImportMetadata: onImportMetadata,
                         onEditCopy: onEditCopy,
                         onEditPlaythrough: onEditPlaythrough
@@ -509,9 +500,6 @@ private struct MacLibraryView: View {
                             onImportMetadata(selectedGame)
                         },
                         onAddPlaythrough: onAddPlaythrough,
-                        onEditGame: {
-                            onEditGame(selectedGame)
-                        },
                         onEditCopy: onEditCopy,
                         onEditPlaythrough: onEditPlaythrough,
                         onOpenList: openListInDetail
@@ -592,9 +580,6 @@ private struct MacLibraryView: View {
                         onImportMetadata(game)
                     },
                     onAddPlaythrough: onAddPlaythrough,
-                    onEditGame: {
-                        onEditGame(game)
-                    },
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough,
                     onOpenList: openListInDetail
@@ -614,7 +599,6 @@ private struct MacLibraryView: View {
                     onOpenGame: openGameInDetail,
                     onAddCopy: onAddCopy,
                     onAddPlaythrough: onAddPlaythrough,
-                    onEditGame: onEditGame,
                     onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough
@@ -663,7 +647,6 @@ private struct IOSLibraryView: View {
     let onDeleteList: (GameList) -> Void
     let onAddCopy: (Game) -> Void
     let onAddPlaythrough: (GameCopy) -> Void
-    let onEditGame: (Game) -> Void
     let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
@@ -683,7 +666,6 @@ private struct IOSLibraryView: View {
                 onDeleteGame: onDeleteGame,
                 onAddCopy: onAddCopy,
                 onAddPlaythrough: onAddPlaythrough,
-                onEditGame: onEditGame,
                 onImportMetadata: onImportMetadata,
                 onEditCopy: onEditCopy,
                 onEditPlaythrough: onEditPlaythrough
@@ -702,7 +684,6 @@ private struct IOSLibraryView: View {
                 onDeleteList: onDeleteList,
                 onAddCopy: onAddCopy,
                 onAddPlaythrough: onAddPlaythrough,
-                onEditGame: onEditGame,
                 onImportMetadata: onImportMetadata,
                 onEditCopy: onEditCopy,
                 onEditPlaythrough: onEditPlaythrough
@@ -727,7 +708,6 @@ private struct IOSGamesLibraryTab: View {
     let onDeleteGame: (Game) -> Void
     let onAddCopy: (Game) -> Void
     let onAddPlaythrough: (GameCopy) -> Void
-    let onEditGame: (Game) -> Void
     let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
@@ -846,9 +826,6 @@ private struct IOSGamesLibraryTab: View {
                 onImportMetadata(game)
             },
             onAddPlaythrough: onAddPlaythrough,
-            onEditGame: {
-                onEditGame(game)
-            },
             onEditCopy: onEditCopy,
             onEditPlaythrough: onEditPlaythrough,
             onOpenList: open
@@ -873,7 +850,6 @@ private struct IOSGamesLibraryTab: View {
                     onOpenGame: open,
                     onAddCopy: onAddCopy,
                     onAddPlaythrough: onAddPlaythrough,
-                    onEditGame: onEditGame,
                     onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough
@@ -907,7 +883,6 @@ private struct IOSListsLibraryTab: View {
     let onDeleteList: (GameList) -> Void
     let onAddCopy: (Game) -> Void
     let onAddPlaythrough: (GameCopy) -> Void
-    let onEditGame: (Game) -> Void
     let onImportMetadata: (Game) -> Void
     let onEditCopy: (GameCopy) -> Void
     let onEditPlaythrough: (GamePlaythrough) -> Void
@@ -1008,7 +983,6 @@ private struct IOSListsLibraryTab: View {
                     onOpenGame: open,
                     onAddCopy: onAddCopy,
                     onAddPlaythrough: onAddPlaythrough,
-                    onEditGame: onEditGame,
                     onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough
@@ -1033,9 +1007,6 @@ private struct IOSListsLibraryTab: View {
                 onImportMetadata(game)
             },
             onAddPlaythrough: onAddPlaythrough,
-            onEditGame: {
-                onEditGame(game)
-            },
             onEditCopy: onEditCopy,
             onEditPlaythrough: onEditPlaythrough,
             onOpenList: open
@@ -1053,7 +1024,6 @@ private struct IOSListsLibraryTab: View {
             onOpenGame: open,
             onAddCopy: onAddCopy,
             onAddPlaythrough: onAddPlaythrough,
-            onEditGame: onEditGame,
             onImportMetadata: onImportMetadata,
             onEditCopy: onEditCopy,
             onEditPlaythrough: onEditPlaythrough

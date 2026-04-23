@@ -14,7 +14,6 @@ struct GameDetailView: View {
     var onDeleteGame: (() -> Void)? = nil
     var onImportMetadata: (() -> Void)? = nil
     var onAddPlaythrough: ((GameCopy) -> Void)? = nil
-    var onEditGame: (() -> Void)? = nil
     var onEditCopy: ((GameCopy) -> Void)? = nil
     var onEditPlaythrough: ((GamePlaythrough) -> Void)? = nil
     var onOpenList: ((GameList) -> Void)? = nil
@@ -150,7 +149,7 @@ struct GameDetailView: View {
     }
 
     private var hasGameActions: Bool {
-        onEditGame != nil || onAddCopy != nil || onDeleteGame != nil || onImportMetadata != nil
+        onAddCopy != nil || onDeleteGame != nil || onImportMetadata != nil
     }
 
     private var gameActionsMenu: some View {
@@ -158,12 +157,6 @@ struct GameDetailView: View {
             if let onImportMetadata {
                 Button(action: onImportMetadata) {
                     Label("Importar desde IGDB", systemImage: "magnifyingglass")
-                }
-            }
-
-            if let onEditGame {
-                Button(action: onEditGame) {
-                    Label("Editar juego", systemImage: "pencil")
                 }
             }
 

@@ -176,7 +176,6 @@ struct GameListDetailView: View {
     var onDeleteList: (() -> Void)? = nil
     var onAddCopy: ((Game) -> Void)? = nil
     var onAddPlaythrough: ((GameCopy) -> Void)? = nil
-    var onEditGame: ((Game) -> Void)? = nil
     var onImportMetadata: ((Game) -> Void)? = nil
     var onEditCopy: ((GameCopy) -> Void)? = nil
     var onEditPlaythrough: ((GamePlaythrough) -> Void)? = nil
@@ -192,7 +191,6 @@ struct GameListDetailView: View {
                 onOpenGame: open,
                 onAddCopy: onAddCopy,
                 onAddPlaythrough: onAddPlaythrough,
-                onEditGame: onEditGame,
                 onImportMetadata: onImportMetadata,
                 onEditCopy: onEditCopy,
                 onEditPlaythrough: onEditPlaythrough
@@ -220,9 +218,6 @@ struct GameListDetailView: View {
                         onImportMetadata?(game)
                     },
                     onAddPlaythrough: onAddPlaythrough,
-                    onEditGame: {
-                        onEditGame?(game)
-                    },
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough,
                     onOpenList: open
@@ -242,7 +237,6 @@ struct GameListDetailView: View {
                     onOpenGame: open,
                     onAddCopy: onAddCopy,
                     onAddPlaythrough: onAddPlaythrough,
-                    onEditGame: onEditGame,
                     onImportMetadata: onImportMetadata,
                     onEditCopy: onEditCopy,
                     onEditPlaythrough: onEditPlaythrough
@@ -275,7 +269,6 @@ struct GameListDetailContentView: View {
     var onOpenGame: (Game) -> Void
     var onAddCopy: ((Game) -> Void)? = nil
     var onAddPlaythrough: ((GameCopy) -> Void)? = nil
-    var onEditGame: ((Game) -> Void)? = nil
     var onImportMetadata: ((Game) -> Void)? = nil
     var onEditCopy: ((GameCopy) -> Void)? = nil
     var onEditPlaythrough: ((GamePlaythrough) -> Void)? = nil
