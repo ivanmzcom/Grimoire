@@ -17,9 +17,6 @@ struct GameFormView: View {
     @Query(sort: [SortDescriptor(\Game.title)]) private var existingGames: [Game]
 
     @State private var searchText = ""
-    @State private var platform = GameCatalog.platforms[0]
-    @State private var format = GameCatalog.formats[0]
-    @State private var copyNotes = ""
     @State private var results = [IGDBGameMetadata]()
     @State private var isSearching = false
     @State private var isLoadingMore = false
@@ -30,16 +27,6 @@ struct GameFormView: View {
     @State private var message: String?
 
     var onCreate: ((Game) -> Void)? = nil
-
-    private var cleanedCopyNotes: String {
-        copyNotes.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var notesPreview: String {
-        cleanedCopyNotes.isEmpty
-            ? "Añade edición, procedencia o cualquier detalle útil de esta copia."
-            : cleanedCopyNotes
-    }
 
     private var canSearch: Bool {
         credentials.isComplete
@@ -66,33 +53,159 @@ struct GameFormView: View {
 
             Divider()
 
-            List {
-                searchSection
-                copySection
-                resultsSection
-            }
-            .listStyle(.inset)
+            singleColumnContent
 
             Divider()
 
             footer
         }
-        .frame(minWidth: 720, idealWidth: 780, minHeight: 620, idealHeight: 680)
+        .frame(minWidth: 820, idealWidth: 900, minHeight: 620, idealHeight: 700)
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Nuevo juego")
-                .font(.title3.weight(.semibold))
+        HStack(alignment: .firstTextBaseline, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Nuevo juego")
+                    .font(.title3.weight(.semibold))
 
-            Text("Busca el juego en IGDB y crea la ficha junto con su primera copia.")
-                .font(.subheadline)
+                Text("Busca el juego en IGDB y crea la ficha automáticamente.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 20)
+
+            Text(resultsCountLabel)
+                .font(.subheadline.monospacedDigit())
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 24)
         .padding(.top, 18)
-        .padding(.bottom, 14)
+        .padding(.bottom, 16)
+    }
+
+    private var singleColumnContent: some View {
+        VStack(spacing: 0) {
+            searchBarSection
+
+            Divider()
+
+            resultsPane
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var searchBarSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if !credentials.isComplete {
+                Label("Faltan credenciales de IGDB en `JuegosApp/Secrets.plist`.", systemImage: "key.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 12) {
+                TextField("Buscar en IGDB", text: $searchText)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        startSearch()
+                    }
+
+                Button {
+                    startSearch()
+                } label: {
+                    Label("Buscar", systemImage: "magnifyingglass")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!canSearch)
+
+                if isSearching {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityLabel("Buscando en IGDB")
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+    }
+
+    private var resultsPane: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Resultados")
+                    .font(.headline)
+
+                Spacer()
+
+                if hasMoreResults {
+                    Text("Desplázate para cargar más")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 14)
+
+            Divider()
+
+            if results.isEmpty {
+                MacResultsPlaceholder(
+                    didSearch: didSearch,
+                    hasCredentials: credentials.isComplete
+                )
+                .padding(24)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            } else {
+                List {
+                    ForEach(results) { result in
+                        let duplicateGame = existingGame(for: result)
+
+                        HStack(alignment: .center, spacing: 14) {
+                            IGDBSearchResultRow(metadata: result)
+
+                            Spacer(minLength: 12)
+
+                            if duplicateGame == nil {
+                                Button("Añadir") {
+                                    createGame(from: result)
+                                }
+                                .buttonStyle(.borderedProminent)
+                            } else {
+                                Label("Ya existe", systemImage: "checkmark.circle.fill")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .task {
+                            await loadMoreIfNeeded(currentResult: result)
+                        }
+                    }
+
+                    if isLoadingMore {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityLabel("Cargando más resultados de IGDB")
+                            Spacer()
+                        }
+                    } else if hasMoreResults {
+                        Button {
+                            Task {
+                                await loadMore()
+                            }
+                        } label: {
+                            Label("Cargar más resultados", systemImage: "arrow.down.circle")
+                        }
+                    }
+                }
+                .listStyle(.inset)
+            }
+        }
     }
 
     private var footer: some View {
@@ -110,7 +223,7 @@ struct GameFormView: View {
                 dismiss()
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 24)
         .padding(.vertical, 14)
     }
 #else
@@ -118,7 +231,6 @@ struct GameFormView: View {
         NavigationStack {
             List {
                 searchSection
-                copySection
                 resultsSection
             }
             .navigationTitle("Nuevo juego")
@@ -131,8 +243,6 @@ struct GameFormView: View {
             }
         }
     }
-#endif
-
     private var searchSection: some View {
         Section("Búsqueda") {
             if !credentials.isComplete {
@@ -165,32 +275,6 @@ struct GameFormView: View {
                         .accessibilityLabel("Buscando en IGDB")
                 }
             }
-        }
-    }
-
-    private var copySection: some View {
-        Section("Primera copia") {
-            Picker("Plataforma", selection: $platform) {
-                ForEach(GameCatalog.platforms, id: \.self) { option in
-                    Text(option).tag(option)
-                }
-            }
-
-            Picker("Formato", selection: $format) {
-                ForEach(GameCatalog.formats, id: \.self) { option in
-                    Text(option).tag(option)
-                }
-            }
-
-            TextField("Edición, estado de la caja, procedencia...", text: $copyNotes, axis: .vertical)
-                .lineLimit(4, reservesSpace: true)
-
-#if os(macOS)
-            Text(notesPreview)
-                .font(.caption)
-                .foregroundStyle(cleanedCopyNotes.isEmpty ? .tertiary : .secondary)
-                .lineLimit(2)
-#endif
         }
     }
 
@@ -245,11 +329,20 @@ struct GameFormView: View {
             }
         }
     }
+#endif
 
     private var messageHasError: Bool {
         message == IGDBMetadataError.missingCredentials.localizedDescription
             || message == "No se pudo guardar el juego. Inténtalo de nuevo."
             || message == "Ese juego ya existe en tu biblioteca."
+    }
+
+    private var resultsCountLabel: String {
+        if results.isEmpty {
+            return didSearch ? "Sin resultados" : "IGDB"
+        }
+
+        return results.count == 1 ? "1 resultado" : "\(results.count) resultados"
     }
 
     private func startSearch() {
@@ -339,16 +432,7 @@ struct GameFormView: View {
         )
         game.applyIGDBMetadata(metadata)
 
-        let firstCopy = GameCopy(
-            platform: platform,
-            format: format,
-            notes: cleanedCopyNotes
-        )
-
-        game.addCopy(firstCopy)
-
         modelContext.insert(game)
-        modelContext.insert(firstCopy)
 
         do {
             try modelContext.save()
@@ -388,10 +472,18 @@ private struct IGDBSearchResultRow: View {
             )
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(metadata.name)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(metadata.name)
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
+
+                    if let year = metadata.releaseYear {
+                        Text(String(year))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
 
                 if !metadata.resultSubtitle.isEmpty {
                     Text(metadata.resultSubtitle)
@@ -411,14 +503,49 @@ private struct IGDBSearchResultRow: View {
                 }
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
-                .lineLimit(1)
+                .lineLimit(2)
             }
         }
-        .padding(.vertical, 4)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 }
+
+#if os(macOS)
+private struct MacResultsPlaceholder: View {
+    let didSearch: Bool
+    let hasCredentials: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Image(systemName: didSearch ? "magnifyingglass" : "text.magnifyingglass")
+                .font(.title2)
+                .foregroundStyle(.secondary)
+
+            Text(didSearch ? "No se encontraron resultados" : "Busca un juego en IGDB")
+                .font(.title3.weight(.semibold))
+
+            Text(placeholderText)
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+    }
+
+    private var placeholderText: String {
+        if !hasCredentials {
+            return "Configura las credenciales de IGDB para activar la búsqueda y crear juegos desde sus metadatos."
+        }
+
+        if didSearch {
+            return "Prueba con otro nombre, una variante del título o la edición principal del juego."
+        }
+
+        return "Busca el título en IGDB y elige el resultado correcto para crear la ficha."
+    }
+}
+#endif
 
 #Preview {
     GameFormView()
